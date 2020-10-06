@@ -1,0 +1,10 @@
+{
+  "algorithm": "RandomForestClassifier",
+  "hyperparameters": {
+    "n_estimators":[5, 10],
+    "max_features":["auto"],
+    "min_samples_split":[2], 
+    "min_samples_leaf":[1]
+  },
+  "cv":2
+}
