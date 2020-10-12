@@ -9,6 +9,40 @@ import pickle
 from sklearn.base import BaseEstimator, TransformerMixin
 import pandas as pd
 
+def Exceptions(code, exceptions, suffix_list=None):
+    '''
+        Loads a list of expcetion words and suffixs not to use when apply parsing function.
+        Load the lists from pickled dictionaries or from .txt files.
+
+    '''
+    # Load expcetions folder
+    parser_dir = f"./ace/data_parser/{code}/"
+    # if there are dictionaries available
+    if exceptions is not None:
+        # load list from text file
+        if exceptions.endswith(".txt"):
+            with open(parser_dir + exceptions) as f:
+                exceptions = [line.strip() for line in f]
+
+        # load list from dictionaries
+        else:
+            # load dictionaries using parser class
+            dictionaries = LoadParseDicts(code).load_dicts()
+
+            # get dictionary containing list of suffix excpetions
+            if suffix_list is not None:
+                exceptions = tuple(dictionaries[exceptions])
+
+            # get dictionary containing word exceptions
+            else:
+                exceptions = [w.replace("\\1", "").replace("\\2", "")
+                              for w in dictionaries[exceptions].values()]
+
+    # else load an empty list
+    else:
+        exceptions = []
+    return exceptions
+
 class LoadParseDicts(): 
     def __init__(self, code): 
         self.__code = code

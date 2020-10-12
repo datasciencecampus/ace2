@@ -25,12 +25,15 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
 OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 """
+import bz2
+import json
+import os
+import pickle
 from datetime import datetime
 import string
 import re
 from collections import Counter
 from os import path
-import ast
 
 import pandas as pd
 import wordninja
@@ -40,44 +43,29 @@ from nltk.stem import WordNetLemmatizer
 from sklearn.feature_extraction.text import strip_accents_ascii
 from sklearn.base import BaseEstimator, TransformerMixin
 from spellchecker import SpellChecker
+from sklearn.pipeline import Pipeline
 
-from ace.parser import LoadParseDicts
-    
-def Exceptions(code, exceptions, suffix_list = None):
-    
-    '''
-        Loads a list of expcetion words and suffixs not to use when apply parsing function. 
-        Load the lists from pickled dictionaries or from .txt files. 
-    
-    '''
-    #Load expcetions folder 
-    parser_dir = f"./ace/data_parser/{code}/"
-    #if there are dictionaries available
-    if exceptions is not None:
-        #load list from text file
-        if exceptions.endswith(".txt"):  
-            with open(parser_dir + exceptions) as f: 
-                exceptions = [line.strip() for line in f]
-        
-        #load list from dictionaries
-        else:
-            #load dictionaries using parser class
-            dictionaries = LoadParseDicts(code).load_dicts()
-            
-            # get dictionary containing list of suffix excpetions
-            if suffix_list is not None: 
-                exceptions = tuple(dictionaries[exceptions])
+from  matplotlib import pyplot as plt
 
-            #get dictionary containing word exceptions
-            else:
-                exceptions = [w.replace("\\1", "").replace("\\2", "") 
-                for w in dictionaries[exceptions].values()]
+from ace.utils.utils import create_load_balance_hist
+
+
+def configure_pipeline(data_path, experiment_path, spell=True, split_words=True, text_header='RECDESC'):
+    base_path=path.join(experiment_path, 'text')
+    config_path = path.join(base_path, 'config.json')
+    d={
+        'spell':spell,
+        'split_words': split_words,
+        'data_path':data_path,
+        'base_path':base_path,
+        'text_header':text_header
+    }
+    if not path.exists(base_path):
+        os.makedirs(base_path)
+    with open(config_path, mode='w+') as fp:
+        json.dump(d, fp)
     
-    #else load an empty list
-    else: 
-        exceptions = []
-    return exceptions
-        
+
 class LemmaTokenizer(object):
     def __init__(self):
         self.wnl = WordNetLemmatizer()
@@ -100,28 +88,15 @@ class LemmaTokenizer(object):
         return [self.lemmatize_with_pos(t) for t in pos_tagged_tokens]
     
 class StemTokenizer(object):
-    def __init__(self, exceptions, code = None):
+    def __init__(self):
         self.ps = PorterStemmer()
-        self.code = code
-        
-        try: 
-            self.suffix = exceptions['suffix']
-        except ValueError: 
-            print("No suffix dictionary/list provided")
-            self.suffix = None
-        try: 
-            self.except_words = exceptions["except"]
-        except ValueError: 
-            print("No excpetions dictionary/list provided")
-            self.except_words = None
+
         
         self.stop_words = stopwords.words('english')
+        #read from text file ad config
         self.stop_words.extend(['shouldv', 'youv', 'abov', 'ani', 'becau', 'becaus', 'befor', 'doe', 'dure', 'ha', 'hi', 'onc', 'onli', 'ourselv', 'themselv', 'thi', 'veri', 'wa', 'whi', 'yourselv'])
         
     def __call__(self, doc):
-        if self.code in ["sic", "soc"]:
-            return [self.ps.stem(t) for t in word_tokenize(doc) if t not in self.stop_words or t not in Exceptions(self.code, exceptions = self.except_words) or not t.endswith(Exceptions(self.code, suffix_list = True, exceptions = self.suffix))]
-        else: 
             return [self.ps.stem(t) for t in word_tokenize(doc) if t not in self.stop_words]
     
 def lowercase_strip_accents_and_ownership(doc):
@@ -148,46 +123,6 @@ def stop(tokensin, unigrams, ngrams, digits=True):
                 new_tokens.append(token)
     return new_tokens
 
-
-class WordAnalyzer(object):
-    tokenizer = None
-    preprocess = None
-    ngram_range = None
-    stemmed_stop_word_set_n = set(stopwords.words('english'))
-    stemmed_stop_word_set_uni = set(stopwords.words('english'))
-
-    @staticmethod
-    def init(tokenizer, preprocess, ngram_range, spell_correct=False):
-        WordAnalyzer.tokenizer = tokenizer
-        WordAnalyzer.preprocess = preprocess
-        WordAnalyzer.ngram_range = ngram_range
-        WordAnalyzer.spell = spell_correct
-
-    # Based on VectorizeMixin in sklearn text.py
-    @staticmethod
-    def analyzer(doc):
-        """based on VectorizerMixin._word_ngrams in sklearn/feature_extraction/text.py,
-        from scikit-learn; extended to prevent generation of n-grams containing stop words"""
-        min_n, max_n = WordAnalyzer.ngram_range
-        original_tokens = WordAnalyzer.tokenizer(WordAnalyzer.preprocess(doc))
-        
-        tokens = original_tokens if min_n == 1 else []
-
-        # handle token n-grams
-        if max_n > 1:
-            min_phrase = max(min_n, 2)
-            n_original_tokens = len(original_tokens)
-
-            # bind method outside of loop to reduce overhead
-            tokens_append = tokens.append
-            space_join = " ".join
-
-            for n in range(min_phrase, min(max_n + 1, n_original_tokens + 1)):
-                for i in range(n_original_tokens - n + 1):
-                    candidate_ngram = original_tokens[i: i + n]
-                    tokens_append(space_join(candidate_ngram))
-
-        return stop(tokens, WordAnalyzer.stemmed_stop_word_set_uni, WordAnalyzer.stemmed_stop_word_set_n)
     
 class SpellCheckDoc(BaseEstimator, TransformerMixin):
     def __init__(self):
@@ -280,3 +215,116 @@ class SplitWords(BaseEstimator, TransformerMixin):
         dataout = pd.Series(x).apply(_join_up_words)
         dataout.to_csv("testing_spelling.csv")
         return dataout
+
+
+class PipelineText:
+    def __init__(self, config_path):
+
+        with open(path.join(config_path, 'config.json'), 'r') as fp:
+            self.__config = json.load( fp)
+
+
+        self.__pipeline_steps = []
+        self.__pipe=None
+
+        # self.__labels_hist = create_load_balance_hist(y_train)
+
+    def extend_pipe(self, steps):
+
+        self.__pipeline_steps.extend(steps)
+
+    def fit_transform(self, X=None, y=None):
+        self.fit(X, y)
+        self.transform(X, y)
+
+    def fit(self, X=None, y=None):
+
+        if not X:
+            Χ, y = pd.read_pickle(self.__config['data_path'])
+        """
+        Combines preprocessing steps into a pipeline object
+        """
+
+        X=X[self.__config['text_header']]
+        spell = SpellCheckDoc()
+        split_words = SplitWords()
+
+
+        pipeline_steps = [x for x in [("SC", spell), ("SW", split_words)]]
+
+
+        self.__pipeline_steps.extend(pipeline_steps)
+
+
+        self.__pipe = Pipeline(self.__pipeline_steps)
+        self.__pipe.fit(X, y)
+
+    def transform(self, X=None, y=None):
+
+        if not X:
+            X,y = pd.read_pickle(self.__config('data_path'))
+
+        text = X[self.__config['text_header']]
+        print("Transforming data")
+        text = self.__pipe.transform(text, y)
+
+        X[self.__config['text_header']]=text
+
+        file_name = '_text_'
+
+        file_name_base = self.__config['base_path']
+        filename_pickle = path.join(file_name_base, file_name + '.pkl.bz2')
+
+        with bz2.BZ2File(filename_pickle, 'wb') as pickle_file:
+            pickle.dump(X, pickle_file, protocol=4, fix_imports=False)
+
+        #cache X?
+        return X
+
+
+    def __load_balancing_graph(self,  clf, probabilities, suffix='labels_graph',
+                               title='Label Counts vs Max Probabilities for: ', ax1_ylabel='max probability'):
+        classes = self.__classes
+        out_name = path.join(self.__outputs_dir, clf + '_load_balanced')
+        n_classes = len(classes)
+        fig, ax1 = plt.subplots()
+        ax2 = ax1.twinx()  # set up the 2nd axis
+        label_counts = [self.__labels_hist[x] for x in classes]
+        sorted_counts_indices = sorted(range(len(label_counts)), key=lambda k: label_counts[k])
+        sorted_probs = [probabilities[x] for x in sorted_counts_indices]
+        sorted_classes = [classes[x] for x in sorted_counts_indices]
+        sorted_label_counts = [label_counts[x] for x in sorted_counts_indices]
+        ax1.plot(sorted_probs)  # plot the probability thresholds line
+        nticks = range(n_classes)
+
+        # the next few lines plot the fiscal year data as bar plots and changes the color for each.
+        ax2.bar(nticks, sorted_label_counts, width=2, alpha=0.2, color='orange')
+        ax2.grid(b=False)  # turn off grid #2
+        ax1.set_title(title + clf)
+        ax1.set_ylabel(ax1_ylabel)
+        ax2.set_ylabel('Label Counts')
+        # Set the x-axis labels to be more meaningful than just some random dates.
+        ax1.axes.set_xticklabels(sorted_classes, rotation='vertical', fontsize=4)
+        ax1.set_xlabel('Labels')
+        # Tweak spacing to prevent clipping of ylabel
+        fig.tight_layout()
+        plt.savefig(out_name[:-4] + suffix)
+        plt.show()
+
+
+configure_pipeline(data_path='data/USPTO-random-1000.pkl.bz2', experiment_path=path.join('outputs','soc'))
+pt = PipelineText(config_path=path.join('outputs', 'soc','text'))
+pt.fit_transform()
+
+# df=pd.read_excel('data/lcf.xlsx')
+# X= df[['RECDESC', 'EXPDESC', 'Price', 'Shop']]
+# y=df[['EFSCODE']]
+# object = X,y
+
+# if not path.exists('data/processed'):
+#     os.makedirs('data/processed')
+#
+# with bz2.BZ2File('data/processed/lcf.pkl.bz2', 'wb') as pickle_file:
+#     pickle.dump(X, pickle_file, protocol=4, fix_imports=False)
+
+print()

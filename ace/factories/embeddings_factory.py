@@ -1,4 +1,4 @@
-from ace.mean_embedding_transformer import MeanEmbeddingTransformer
+from ace.utils.mean_embedding_transformer import MeanEmbeddingTransformer
 
 
 class EmbeddingsFactory(object):
