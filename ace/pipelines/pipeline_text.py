@@ -65,9 +65,41 @@ def configure_pipeline(data_path, experiment_path, spell=True, split_words=True,
         os.makedirs(base_path)
     with open(config_path, mode='w+') as fp:
         json.dump(d, fp)
-    
 
-class LemmaTokenizer(object):
+# Don't need a manual method for generating n-grams, most classifiers etc seem to have such things built in.
+# Tempted to implement phrase detection though.
+# Also don't need to deal with lowercasing and stripping if I'm passing it through the stemmer tokenizers etc.
+
+# def lowercase_strip_accents_and_ownership(doc):
+#     lowercase_no_accents_doc = strip_accents_ascii(str(doc).lower())
+#     return lowercase_no_accents_doc.replace('"', '').\
+#                                     replace("\'s", "").\
+#                                     replace("\'ve", " have").\
+#                                     replace("\'re", " are").\
+#                                     replace("\'", "").\
+#                                     strip("`").\
+#                                     strip()
+
+# def stop(tokens_in, unigrams, ngrams, digits=True):
+#     new_tokens = []
+#     for token in tokens_in:
+#         ngram = token.split()
+#         if len(ngram) == 1:
+#             if ngram[0] not in unigrams and not ngram[0].isdigit():
+#                 new_tokens.append(token)
+#         else:
+#             word_in_ngrams = False
+#             for word in ngram:
+#                 if word in ngrams or (digits and word.isdigit()):
+#                     word_in_ngrams = True
+#                     break
+#             if not word_in_ngrams:
+#                 new_tokens.append(token)
+#     return new_tokens
+
+
+class LemmaTokenizer(BaseEstimator, TransformerMixin):
+    # TODO does this need stopwords?
     def __init__(self):
         self.wnl = WordNetLemmatizer()
 
@@ -83,37 +115,12 @@ class LemmaTokenizer(object):
         else:
             return self.wnl.lemmatize(tag[0])
 
-    def __call__(self, doc):
-        text = word_tokenize(doc)
-        pos_tagged_tokens = pos_tag(text)
-        return [self.lemmatize_with_pos(t) for t in pos_tagged_tokens]
+    def fit(self, X, y=None):
+        return self
 
-
-
-
-def lowercase_strip_accents_and_ownership(doc):
-    lowercase_no_accents_doc = strip_accents_ascii(str(doc).lower())
-    return lowercase_no_accents_doc.replace('"', '').replace("\'s", "").replace("\'ve", " have").replace("\'re",
-                                                                                                        " are").replace(
-        "\'", "").strip("`").strip()
-
-
-def stop(tokens_in, unigrams, ngrams, digits=True):
-    new_tokens = []
-    for token in tokens_in:
-        ngram = token.split()
-        if len(ngram) == 1:
-            if ngram[0] not in unigrams and not ngram[0].isdigit():
-                new_tokens.append(token)
-        else:
-            word_in_ngrams = False
-            for word in ngram:
-                if word in ngrams or (digits and word.isdigit()):
-                    word_in_ngrams = True
-                    break
-            if not word_in_ngrams:
-                new_tokens.append(token)
-    return new_tokens
+    def transform(self, X, y=None):
+        print("Lemmatizing and tokenizing (wordnet)")
+        return [[self.lemmatize_with_pos(t) for t in pos_tag(word_tokenize(doc))] for doc in X]
 
 
 class StemTokenizer(BaseEstimator, TransformerMixin):
@@ -129,6 +136,7 @@ class StemTokenizer(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X, y=None):
+        print("Stemming and tokenizing (porter)")
         return [[self.ps.stem(t) for t in word_tokenize(doc) if t not in self.stop_words] for doc in X]
 
 
@@ -142,19 +150,16 @@ class SpellCheckDoc(BaseEstimator, TransformerMixin):
     def transform(self, X, y=None):
         print("correcting spelling")
         
-        def _string_correction(original_tokens):
-            corrected_text = []
-            mispelled_words = self.spell_.unknown(original_tokens.split())
-            for word in original_tokens.split():
-                if word.lower() in mispelled_words:
-                    corrected_text.append(self.spell_.correction(word).upper())
-                else:
-                    corrected_text.append(word.upper())
-            return " ".join(corrected_text)
-        
-        dataout = pd.Series(X).astype(str).str.translate(str.maketrans('', '', string.punctuation))
-        dataout = dataout.apply(_string_correction)
-        return dataout
+        def _string_correction(doc):
+            tokens = word_tokenize(doc)
+            mispelled_words = self.spell_.unknown(tokens)
+            return " ".join([self.spell_.correction(token) if
+                             (token.lower() in mispelled_words) else token
+                             for token in tokens])
+
+        translations = str.maketrans('', '', string.punctuation)
+
+        return [_string_correction(doc.translate(translations)) for doc in X]
 
     
 class SplitWords(BaseEstimator, TransformerMixin):
@@ -204,13 +209,14 @@ class SplitWords(BaseEstimator, TransformerMixin):
 
         return self
         
-    def transform(self, x):
+    def transform(self, X):
         print("Finding joined up words")
         
-        def _join_up_words(original_tokens):
+        def _join_up_words(document):
             corrected_text = []
-            mispelled_words = self.spell_.unknown(original_tokens.split())
-            for word in original_tokens.split():
+            mispelled_words = self.spell_.unknown(document.split())
+            # TODO: Change this to use word_tokenize() ?
+            for word in document.split():
                 if word.lower() in mispelled_words:
                     corrected_text.append(" ".join(self.language_model_.split(word)).upper())
                 else:
@@ -220,9 +226,7 @@ class SplitWords(BaseEstimator, TransformerMixin):
             output = re.sub(r"\b(\w) (?=\w\b)", r"\1", output)
             return output
         
-        dataout = pd.Series(x).apply(_join_up_words)
-
-        return dataout
+        return [_join_up_words(tokens) for tokens in X]
 
 
 class PipelineText:
@@ -256,8 +260,11 @@ class PipelineText:
 
         spell = SpellCheckDoc()
         split_words = SplitWords()
+        # stem_tokenizer = StemTokenizer()
+        lemma_tokenizer = LemmaTokenizer()
 
-        pipeline_steps = [x for x in [("SC", spell), ("SW", split_words)]]
+        # pipeline_steps = [x for x in [("SC", spell), ("SW", split_words), ("ST", stem_tokenizer)]]
+        pipeline_steps = [x for x in [("SC", spell), ("SW", split_words), ("LT", lemma_tokenizer)]]
 
         self.__pipeline_steps.extend(pipeline_steps)
 
