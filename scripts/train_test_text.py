@@ -4,7 +4,7 @@ import sys
 import time
 from os import makedirs, path
 
-from ace.mlpipeline import MLPipeline
+from ace.pipelines.pipeline_ml import MLPipeline
 from ace.utils.ace_exception import AceException
 from ace.utils import utils
 

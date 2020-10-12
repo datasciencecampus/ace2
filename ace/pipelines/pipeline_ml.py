@@ -16,7 +16,7 @@ from itertools import cycle, product
 from sklearn import metrics as met
 from sklearn.metrics import make_scorer, accuracy_score, precision_score, recall_score, balanced_accuracy_score, zero_one_loss, f1_score, confusion_matrix, roc_curve, auc
 
-from scipy import interp
+from scipy import interpolate
 from sklearn.metrics import confusion_matrix, roc_curve, auc, accuracy_score
 from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV
 from sklearn.preprocessing import label_binarize, normalize
@@ -28,99 +28,45 @@ from scripts.qa_results import qa_results_by_class, join_compare_systems
 matplotlib.use('Agg')
 
 
-class HyperparameterPipeline:
-    """
-    Facilitiates grid-search over hyperparameters, outputs key statistics over hyperparameters
-    hyperparameter: dict of {'hyperparameter': <list of values>}
-    algorithm: string name of a model that can by furnished by the MLFactory class    
-    """
-    
-    def __init__(self, algorithm, hyperparameters, dirname='soc', cv=5):
-    
-        dtime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        self.__ace_dir = path.join('outputs/', dirname, dtime)
-        
-        makedirs(self.__ace_dir, exist_ok=True)
-        
-        self.__dirname = dirname
-        
-        self.__algorithm = algorithm
-        
-        # record and unpack hyperparameters
-        #self.__parameter_names = list(hyperparameters.keys())
-        #self.__parameter_combos = list(product(*hyperparameters.values()))
-        self.__hyperparameters = hyperparameters
-        self.__cv = cv
-        
-        self.__X, self.__y = pd.read_pickle(path.join('cached_features', dirname, '_xy.pkl.bz2'))
-        
-        self.__score_set = {'accuracy': make_scorer(accuracy_score),
-                            'precision_macro': make_scorer(precision_score, average="macro"),
-                            'recall_macro': make_scorer(recall_score, average="macro"),
-                            'precision_micro': make_scorer(precision_score, average="micro"),
-                            'recall_micro': make_scorer(recall_score, average="micro")}
+def configure_pipeline(experiment_path, data_path, alg_type, multi=True, dirname='soc',
+                  data_filename='training_data.pkl.bz2',
+                  train_test_ratio=0.75, threshold=0.5, accuracy=0.9):
+    base_path = path.join(experiment_path, 'features')
+    config_path = path.join(base_path,  'config.json')
+    pipe_path = path.join(base_path, 'pipe')
+    d={
 
-        
-    def test_parameters(self):
-        """
-        For now, employs sklearn's GridSearchCV.  Given speed of training and data
-        size, would be smart to switch to GridSearch without CV
-        """
-        classification_model = MLFactory.factory(self.__algorithm)
-        
-        # GridSearch is set NOT to refit the best-performant combination on
-        # all data, because this class is for hyperparameter exploration, not
-        # model production
-        
-        if self.__algorithm.startswith("RandomForest"):
-            clf = RandomizedSearchCV(classification_model,
-                               param_distributions=self.__hyperparameters,
-                               scoring=self.__score_set,
-                               return_train_score=True,
-                               cv=self.__cv,
-                               n_jobs=2,
-                               verbose=10,
-                               refit=False)
-        else: 
-            clf = GridSearchCV(classification_model,
-                     param_grid=self.__hyperparameters,
-                     scoring=self.__score_set,
-                     return_train_score=True,
-                     cv=self.__cv,
-                     n_jobs=2,
-                     verbose=10,
-                     refit=False)
+        'alg_type':alg_type,
+        'multi': multi,
+        'dirname': dirname,
+        'data_filename':data_filename,
+        'train_test_ratio':train_test_ratio,
+        'threshold': threshold,
+        'accuracy':accuracy,
 
-        clf.fit(self.__X, self.__y)
-        
-        results = pd.DataFrame(clf.cv_results_)
-        
-        results.to_csv(path.join(self.__ace_dir, "parameter_search_{}.csv".format(self.__algorithm)))
-        
-        print(results)
+
+    }
+    with open(config_path, 'w') as fp: json.dump(d, fp)
         
 
-class MLPipeline:
-    def __init__(self, alg_types, multi=True, dirname='soc', 
-                 output_dirname= 'soc', data_filename='training_data.pkl.bz2',
-                  train_test_ratio=0.75, use_cached_model=False, base_dir='', 
-                 memory = False, threshold=0.5, accuracy=0.9):
+class PipelineML:
+    def __init__(self):
+
+        with open(config_filename, 'w') as fp:
+            self.__config = json.load( fp)
 
         dtime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self.__data_dir = path.join('data',dirname)
         self.__data_filename = data_filename
         self.__models_dir = path.join('models', dirname)
-        if output_dirname is not None:
-            self.__outputs_dir = path.join('outputs', output_dirname, dtime)
-        else:
-            self.__outputs_dir = path.join('outputs', dirname, dtime)
+        self.__outputs_dir = path.join('outputs', dirname, dtime)
 
         makedirs(self.__outputs_dir, exist_ok=True)
         self.__dirname = dirname
         self.CL_FILENAME_PART = '.model.pickle'
         self.__use_cached_model = use_cached_model
         
-        self.__train_test_ratio = train_test_ratio
+        self.__train_test_ratio = self.__config['train_test_ratio']
         self.__alg_types = alg_types
         self.__multilabeled = multi
         self.__probs = {}
@@ -143,84 +89,64 @@ class MLPipeline:
         for cls in y:
             if cls not in self.__thresholds:
                 self.__thresholds[cls]=1.1
-    
-    def test_models(self):
-        
+
+    def fit(self, X, y):
         X_train, X_test, y_train, y_test = train_test_split(self.__X, self.__y, test_size=1.0 - self.__train_test_ratio,
                                                             random_state=42, shuffle=True)
-        self.__labels_hist = create_load_balance_hist(y_train)
-        
+
         self.__y_test = y_test
 
-        def train_test_models():
-            
-            global classification_model
-            global predictions
-            global probabilites 
-            
-            for classifier in self.__alg_types:
-                pickle_path = path.join(self.__models_dir, classifier + self.CL_FILENAME_PART)
+        pickle_path = path.join(self.__models_dir, classifier + self.CL_FILENAME_PART)
 
-                if self.__use_cached_model:
-                    classification_model = joblib.load(pickle_path)
-                else:
-                    print("Training a " + classifier + " with " + str(len(y_train)) + " rows")
-                    classification_model = MLFactory.factory(classifier).fit(X_train, y_train)
-                    joblib.dump(classification_model, pickle_path, compress=9)
+        print("Training a " + classifier + " with " + str(len(y_train)) + " rows")
+        classification_model = MLFactory.factory(classifier).fit(X_train, y_train)
+        joblib.dump(classification_model, pickle_path, compress=9)
 
-                self.__classes = classification_model.classes_
+        self.__classes = classification_model.classes_
 
-                print("Testing the " + classifier + " with " + str(len(y_test)) + " rows")
-                probabilities, predictions = self.__classify(X_test, classification_model, y_test, classifier)
 
-                accuracy = accuracy_score(y_test, predictions)
-                print("Accuracy: " + str(accuracy))
-                if self.__accuracy: 
-                    self.__thresholds = self.__create_thresholds_list(predictions, probabilities, y_test)
-                else: 
-                    self.__create_thresholds_list(predictions, probabilities, y_test)
-                self.__samples_df, self.__labels_df = self.__create_metrics(predictions, probabilities, y_test)
-                self.__output_graphs(classifier, y_test)
-            print("******* Topics Classifier Done!*******")
-            n_unclassified  = sum([x == False for x in self.__classifiable])
-            write_output = {
-                'training' : (
+    def transform(self, X, y):
+        id = X.id
+        classification_model = joblib.load(pickle_path)
+        print("Testing the " + classifier + " with " + str(len(y_test)) + " rows")
+        probabilities, predictions = self.__classify(X_test, classification_model, y_test, classifier)
+
+        accuracy = accuracy_score(y_test, predictions)
+        print("Accuracy: " + str(accuracy))
+        if self.__accuracy:
+            self.__thresholds = self.__create_thresholds_list(predictions, probabilities, y_test)
+        else:
+            self.__create_thresholds_list(predictions, probabilities, y_test)
+        self.__samples_df, self.__labels_df = self.__create_metrics(predictions, probabilities, y_test)
+        self.__output_graphs(classifier, y_test)
+
+        print("******* Topics Classifier Done!*******")
+        n_unclassified = sum([x == False for x in self.__classifiable])
+        write_output = {
+            'training': (
                     "******* Topics Classifier ************" + "\n" +
                     "num data all: " + str(self.__X.shape[0]) + "\n" +
                     "num data train: " + str(self.__X.shape[0] * self.__train_test_ratio) + "\n" +
                     "num data test: " + str(self.__X.shape[0] * (1 - self.__train_test_ratio)) + "\n" +
                     "unclassified: " + str(n_unclassified) + "\n" +
-                    "match-rate: " + str(1 - (n_unclassified/((self.__X.shape[0]* (1 - self.__train_test_ratio))))) + "\n" +
-                    "matched accuracy: " + str(accuracy_score(self.__samples_df['true_label'], self.__samples_df['prediction_labels'])) + "\n" 
-                    "overall accuracy: " + str(accuracy) + "\n" +
-                  "**************************************\n"
-                )
-            }
-
-            with open(path.join(self.__outputs_dir, 'report.txt'), "w") as f:
-                f.write(write_output['training'])
-        
-        # Below handles reporting on memory usage, assumes only 1 model being tested?
-        max_memory = "Did not run memory tests"
-        if self.__memory:
-            max_memory = MemoryMonitor(train_test_models, alg_type = MLFactory.factory(self.__alg_types[0]), dirname = self.__dirname, runtype = "Training", size = self.__X.shape[0] * self.__train_test_ratio).save_memory_output()
-            print(f"******* Memory Report: {max_memory} *******")  
-            write_output = {
-                'memory' : (
-                    "******* Memory Report ************" + "\n" +
-                    "num data all: " + str(self.__X.shape[0]) + "\n" +
-                    "num data train: " + str(self.__X.shape[0] * self.__train_test_ratio) + "\n" +
-                    "num data test: " + str(self.__X.shape[0] * (1 - self.__train_test_ratio)) + "\n" +
-                    "unclassified: " + str(self.__classifiable.count(False)) + "\n" +
-                    "memory useage: " + str(max_memory) + "\n" +
+                    "match-rate: " + str(
+                1 - (n_unclassified / ((self.__X.shape[0] * (1 - self.__train_test_ratio))))) + "\n" +
+                    "matched accuracy: " + str(
+                accuracy_score(self.__samples_df['true_label'], self.__samples_df['prediction_labels'])) + "\n"
+                                                                                                           "overall accuracy: " + str(
+                accuracy) + "\n" +
                     "**************************************\n"
-                )
-            }
-            with open(path.join(self.__outputs_dir, 'memory_report.txt'), "w") as f:
-                f.write(write_output['memory'])
+            )
+        }
+
+        with open(path.join(self.__outputs_dir, 'report.txt'), "w") as f:
+            f.write(write_output['training'])
+
+
         
-        else: 
-            train_test_models()
+
+
+
         
              
     def validate_models(self, balanced=False):
@@ -286,26 +212,7 @@ class MLPipeline:
                                  balanced=balanced,
                                  id_col="id")      
         
-        if self.__memory:
-            if balanced: 
-                runtype = "Validation balanced"
-            else: 
-                runtype = "Validation"
-                
-            max_memory = MemoryMonitor(test_validate_models, alg_type = MLFactory.factory(self.__alg_types[0]), dirname = self.__dirname, runtype = runtype, size = X_valid.shape[0]).save_memory_output()        
-            
-            print(f"******* Memory Report: {max_memory} *******")  
-            write_output = (
-                    "******* Memory Report ************" + "\n" +
-                    "num validation data: " + str(X_valid.shape[0]) + "\n" +
-                    "unclassified: " + str(self.__classifiable.count(False)) + "\n" +
-                    "match-rate: " + str(1 - (self.__classifiable.count(False)/X_valid.shape[0])) + "\n" +
-                    "memory useage: " + str(max_memory) + "\n" +
-                    "**************************************\n")
-            with open(path.join(self.__outputs_dir, f'memory_report{file_ext}.txt'), "w") as f:
-                f.write(write_output)
-        else: 
-            test_validate_models()
+
 
     def __create_thresholds_list(self, predictions, probabilities, y):
         accuracy=self.__accuracy
@@ -503,34 +410,7 @@ class MLPipeline:
         self.__plot_roc(classes, clf + ' max', fpr, out_name + ' max', probs, max_rocs, roc_auc, tpr, y)
         self.__plot_roc(classes, clf + ' mid', fpr, out_name + ' mid', probs, mid_rocs, roc_auc, tpr, y)
 
-    def __load_balancing_graph(self,  clf, probabilities, suffix='labels_graph',
-                               title='Label Counts vs Max Probabilities for: ', ax1_ylabel='max probability'):
-        classes = self.__classes
-        out_name = path.join(self.__outputs_dir, clf + '_load_balanced')
-        n_classes = len(classes)
-        fig, ax1 = plt.subplots()
-        ax2 = ax1.twinx()  # set up the 2nd axis
-        label_counts = [self.__labels_hist[x] for x in classes]
-        sorted_counts_indices = sorted(range(len(label_counts)), key=lambda k: label_counts[k])
-        sorted_probs = [probabilities[x] for x in sorted_counts_indices]
-        sorted_classes = [classes[x] for x in sorted_counts_indices]
-        sorted_label_counts = [label_counts[x] for x in sorted_counts_indices]
-        ax1.plot(sorted_probs)  # plot the probability thresholds line
-        nticks = range(n_classes)
 
-        # the next few lines plot the fiscal year data as bar plots and changes the color for each.
-        ax2.bar(nticks, sorted_label_counts, width=2, alpha=0.2, color='orange')
-        ax2.grid(b=False)  # turn off grid #2
-        ax1.set_title(title + clf)
-        ax1.set_ylabel(ax1_ylabel)
-        ax2.set_ylabel('Label Counts')
-        # Set the x-axis labels to be more meaningful than just some random dates.
-        ax1.axes.set_xticklabels(sorted_classes, rotation='vertical', fontsize=4)
-        ax1.set_xlabel('Labels')
-        # Tweak spacing to prevent clipping of ylabel
-        fig.tight_layout()
-        plt.savefig(out_name[:-4] + suffix)
-        plt.show()
 
     def __plot_roc(self, classes, clf, fpr, out_name, probs, chosen_classes, roc_auc, tpr, y):
         lw = 2

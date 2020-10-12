@@ -9,7 +9,7 @@ import pandas as pd
 
 from ace.utils.ace_exception import AceException
 from ace.utils import utils
-from ace.pipeline_feature import DumbFeaturesPipeline
+from ace.pipelines.pipeline_feature import PipelineFeatures
 
 feature_selection_algs = ['Logistic', "X2", "lsvc", "ExtraTrees"]
 features = ['frequency_matrix', 'word_features', 'nmf', 'embeddings']
@@ -66,7 +66,7 @@ def main(supplied_args):
        
     makedirs(path.join('cached_features', features_directory_name), exist_ok=True)
     makedirs(path.join('models', features_directory_name), exist_ok=True)
-    model_obj = DumbFeaturesPipeline(data_dirname = data_directory, data_filename = training_filename, feature_set = feature_set, idf=False,num_features=args.num_tfidf_features, feature_selection_type=feature_select_type, spell=args.spell_correct, parser=args.parse, min_df=args.min_word_count, exceptions = ast.literal_eval(args.exceptions))
+    model_obj = PipelineFeatures(data_dirname = data_directory, data_filename = training_filename, feature_set = feature_set, idf=False, num_features=args.num_tfidf_features, feature_selection_type=feature_select_type, spell=args.spell_correct, parser=args.parse, min_df=args.min_word_count, exceptions = ast.literal_eval(args.exceptions))
     
     model_obj.save_data(features_directory_name, 'training')
     print("Training features saved")

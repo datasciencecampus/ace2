@@ -4,9 +4,8 @@ import time
 import json
 from os import makedirs, path
 
-from ace.mlpipeline import HyperparameterPipeline
+from ace.pipelines.pipeline_ml import HyperparameterPipeline
 from ace.utils.ace_exception import AceException
-from ace.utils import MemoryMonitor
 
 
 def get_args(command_line_arguments):
