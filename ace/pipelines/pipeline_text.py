@@ -89,17 +89,6 @@ class LemmaTokenizer(object):
         return [self.lemmatize_with_pos(t) for t in pos_tagged_tokens]
 
 
-class StemTokenizer(object):
-    def __init__(self):
-        self.ps = PorterStemmer()
-
-        self.stop_words = stopwords.words('english')
-        # Read from text file ad config
-        self.stop_words.extend(['shouldv', 'youv', 'abov', 'ani', 'becau', 'becaus', 'befor', 'doe', 'dure', 'ha',
-                                'hi', 'onc', 'onli', 'ourselv', 'themselv', 'thi', 'veri', 'wa', 'whi', 'yourselv'])
-        
-    def __call__(self, doc):
-        return [self.ps.stem(t) for t in word_tokenize(doc) if t not in self.stop_words]
 
 
 def lowercase_strip_accents_and_ownership(doc):
@@ -126,15 +115,31 @@ def stop(tokens_in, unigrams, ngrams, digits=True):
                 new_tokens.append(token)
     return new_tokens
 
-    
+
+class StemTokenizer(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        self.ps = PorterStemmer()
+
+        self.stop_words = stopwords.words('english')
+        # Read from text file ad config
+        self.stop_words.extend(['shouldv', 'youv', 'abov', 'ani', 'becau', 'becaus', 'befor', 'doe', 'dure', 'ha',
+                                'hi', 'onc', 'onli', 'ourselv', 'themselv', 'thi', 'veri', 'wa', 'whi', 'yourselv'])
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None):
+        return [[self.ps.stem(t) for t in word_tokenize(doc) if t not in self.stop_words] for doc in X]
+
+
 class SpellCheckDoc(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.spell_ = SpellChecker(distance=1) 
     
-    def fit(self, x, y=None):
+    def fit(self, X, y=None):
         return self
         
-    def transform(self, x):
+    def transform(self, X, y=None):
         print("correcting spelling")
         
         def _string_correction(original_tokens):
@@ -147,7 +152,7 @@ class SpellCheckDoc(BaseEstimator, TransformerMixin):
                     corrected_text.append(word.upper())
             return " ".join(corrected_text)
         
-        dataout = pd.Series(x).str.translate(str.maketrans('', '', string.punctuation))
+        dataout = pd.Series(X).astype(str).str.translate(str.maketrans('', '', string.punctuation))
         dataout = dataout.apply(_string_correction)
         return dataout
 
@@ -161,7 +166,7 @@ class SplitWords(BaseEstimator, TransformerMixin):
         self.language_model_ = None
 
     @staticmethod
-    def __keep_correctly_spelled(self, original_tokens, spell):
+    def __keep_correctly_spelled(original_tokens, spell):
         """ Only keep words that are correctly spelled
         params: 
         * original tokens: list of words
@@ -174,20 +179,27 @@ class SplitWords(BaseEstimator, TransformerMixin):
                 corrected_text.append(word.upper())
         return " ".join(corrected_text)
     
-    def fit(self, x, y=None):
+    def fit(self, X, y=None):
         dtime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        self.__lang_filepath = path.join(self.__output_filedir, f'my_lang_{dtime}.txt.gz')
-        df = pd.DataFrame({'words' :[self.__keep_correctly_spelled(token, self.spell_) for token in x]})
+        self.__lang_filepath = path.join(f'my_lang_{dtime}.txt.gz')
+        df = pd.DataFrame({'words' :[self.__keep_correctly_spelled(token, self.spell_) for token in X]})
         word_count = dict(Counter(" ".join(df['words']).split(" "))) 
         word_count_df = pd.DataFrame.from_dict(word_count, orient='index').reset_index()
         word_count_df.columns= ['words', 'n_appearances']
 
         # Only keep actual words
         word_count_df['wordlength'] = word_count_df['words'].str.len()
-        word_count_df = word_count_df[(word_count_df['wordlength'] >=3) | (word_count_df['words'].isin(self.stopwords_list_))]
-        word_count_df = word_count_df.sort_values('n_appearances',ascending=False).reset_index(drop=True)
+        word_count_df = word_count_df[(word_count_df['wordlength'] >=3) |
+                                      (word_count_df['words'].isin(self.stopwords_list_))]
+
+        word_count_df = word_count_df.sort_values('n_appearances', ascending=False).reset_index(drop=True)
         word_count_df['words'] = word_count_df['words'].str.lower()
-        word_count_df['words'].to_csv(self.__lang_filepath,index=None, header=False,compression='gzip',encoding='utf-8')
+        word_count_df['words'].to_csv(self.__lang_filepath,
+                                      index=None,
+                                      header=False,
+                                      compression='gzip',
+                                      encoding='utf-8')
+
         self.language_model_ = wordninja.LanguageModel(self.__lang_filepath)
 
         return self
@@ -217,11 +229,10 @@ class PipelineText:
     def __init__(self, config_path):
 
         with open(path.join(config_path, 'config.json'), 'r') as fp:
-            self.__config = json.load( fp)
-
+            self.__config = json.load(fp)
 
         self.__pipeline_steps = []
-        self.__pipe=None
+        self.__pipe = None
 
         # self.__labels_hist = create_load_balance_hist(y_train)
 
@@ -231,26 +242,24 @@ class PipelineText:
 
     def fit_transform(self, X=None, y=None):
         self.fit(X, y)
-        self.transform(X, y)
+        return self.transform(X, y)
 
     def fit(self, X=None, y=None):
 
         if not X:
-            Χ, y = pd.read_pickle(self.__config['data_path'])
+            with bz2.BZ2File(self.__config['data_path'], 'rb') as pickle_file:
+                X, y = pickle.load(pickle_file)
+
         """
         Combines preprocessing steps into a pipeline object
         """
 
-        X=X[self.__config['text_header']]
         spell = SpellCheckDoc()
         split_words = SplitWords()
 
-
         pipeline_steps = [x for x in [("SC", spell), ("SW", split_words)]]
 
-
         self.__pipeline_steps.extend(pipeline_steps)
-
 
         self.__pipe = Pipeline(self.__pipeline_steps)
         self.__pipe.fit(X, y)
@@ -258,13 +267,11 @@ class PipelineText:
     def transform(self, X=None, y=None):
 
         if not X:
-            X,y = pd.read_pickle(self.__config('data_path'))
+            with bz2.BZ2File(self.__config['data_path'], 'rb') as pickle_file:
+                X, y = pickle.load(pickle_file)
 
-        text = X[self.__config['text_header']]
         print("Transforming data")
-        text = self.__pipe.transform(text, y)
-
-        X[self.__config['text_header']]=text
+        X = self.__pipe.transform(X)
 
         file_name = '_text_'
 
@@ -274,58 +281,34 @@ class PipelineText:
         with bz2.BZ2File(filename_pickle, 'wb') as pickle_file:
             pickle.dump(X, pickle_file, protocol=4, fix_imports=False)
 
-        #cache X?
         return X
 
 
-    def __load_balancing_graph(self,  clf, probabilities, suffix='labels_graph',
-                               title='Label Counts vs Max Probabilities for: ', ax1_ylabel='max probability'):
-        classes = self.__classes
-        out_name = path.join(self.__outputs_dir, clf + '_load_balanced')
-        n_classes = len(classes)
-        fig, ax1 = plt.subplots()
-        ax2 = ax1.twinx()  # set up the 2nd axis
-        label_counts = [self.__labels_hist[x] for x in classes]
-        sorted_counts_indices = sorted(range(len(label_counts)), key=lambda k: label_counts[k])
-        sorted_probs = [probabilities[x] for x in sorted_counts_indices]
-        sorted_classes = [classes[x] for x in sorted_counts_indices]
-        sorted_label_counts = [label_counts[x] for x in sorted_counts_indices]
-        ax1.plot(sorted_probs)  # plot the probability thresholds line
-        nticks = range(n_classes)
-
-        # the next few lines plot the fiscal year data as bar plots and changes the color for each.
-        ax2.bar(nticks, sorted_label_counts, width=2, alpha=0.2, color='orange')
-        ax2.grid(b=False)  # turn off grid #2
-        ax1.set_title(title + clf)
-        ax1.set_ylabel(ax1_ylabel)
-        ax2.set_ylabel('Label Counts')
-        # Set the x-axis labels to be more meaningful than just some random dates.
-        ax1.axes.set_xticklabels(sorted_classes, rotation='vertical', fontsize=4)
-        ax1.set_xlabel('Labels')
-        # Tweak spacing to prevent clipping of ylabel
-        fig.tight_layout()
-        plt.savefig(out_name[:-4] + suffix)
-        plt.show()
-
-
-#configure_pipeline(data_path='data/USPTO-random-1000.pkl.bz2', experiment_path=path.join('outputs', 'soc'))
-#pt = PipelineText(config_path=path.join('outputs', 'soc', 'text'))
-#pt.fit_transform()
-
-test_text = ["Hello and welcome to another round of Calvin-Ball!",
-             "The current latest rule is that you have to provide your own sports commentary!",
-             "We really hope this round ends soon..."]
-
-print(LemmaTokenizer()(test_text[0]))
-print(StemTokenizer()(test_text[1]))
-
-X = SpellCheckDoc().fit_transform(test_text)
-
-print(X)
-
-
-
-# These are all the corpora NLTK needs to work
-# nltk_corps = ['punkt', 'stopwords', 'averaged_perceptron_tagger', 'wordnet']
-
-print("done!")
+    # def __load_balancing_graph(self,  clf, probabilities, suffix='labels_graph',
+    #                            title='Label Counts vs Max Probabilities for: ', ax1_ylabel='max probability'):
+    #     classes = self.__classes
+    #     out_name = path.join(self.__outputs_dir, clf + '_load_balanced')
+    #     n_classes = len(classes)
+    #     fig, ax1 = plt.subplots()
+    #     ax2 = ax1.twinx()  # set up the 2nd axis
+    #     label_counts = [self.__labels_hist[x] for x in classes]
+    #     sorted_counts_indices = sorted(range(len(label_counts)), key=lambda k: label_counts[k])
+    #     sorted_probs = [probabilities[x] for x in sorted_counts_indices]
+    #     sorted_classes = [classes[x] for x in sorted_counts_indices]
+    #     sorted_label_counts = [label_counts[x] for x in sorted_counts_indices]
+    #     ax1.plot(sorted_probs)  # plot the probability thresholds line
+    #     nticks = range(n_classes)
+    #
+    #     # the next few lines plot the fiscal year data as bar plots and changes the color for each.
+    #     ax2.bar(nticks, sorted_label_counts, width=2, alpha=0.2, color='orange')
+    #     ax2.grid(b=False)  # turn off grid #2
+    #     ax1.set_title(title + clf)
+    #     ax1.set_ylabel(ax1_ylabel)
+    #     ax2.set_ylabel('Label Counts')
+    #     # Set the x-axis labels to be more meaningful than just some random dates.
+    #     ax1.axes.set_xticklabels(sorted_classes, rotation='vertical', fontsize=4)
+    #     ax1.set_xlabel('Labels')
+    #     # Tweak spacing to prevent clipping of ylabel
+    #     fig.tight_layout()
+    #     plt.savefig(out_name[:-4] + suffix)
+    #     plt.show()
