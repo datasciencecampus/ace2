@@ -39,8 +39,8 @@ from collections import Counter
 from datetime import datetime
 from os import path
 
-from nltk import word_tokenize, PorterStemmer, pos_tag
-from nltk.corpus import wordnet, stopwords
+from nltk import word_tokenize, PorterStemmer
+from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from sklearn.feature_extraction.text import strip_accents_ascii
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -79,30 +79,6 @@ def configure_pipeline(experiment_path, data_path, spell=True, split_words=True,
         json.dump(d, fp)
 
 
-class LemmaTokenizer(BaseEstimator, TransformerMixin):
-    # TODO does this need stopwords?
-    def __init__(self):
-        self.wnl = WordNetLemmatizer()
-
-    def lemmatize_with_pos(self, tag):
-        if tag[1].startswith('N'):
-            return self.wnl.lemmatize(tag[0], wordnet.NOUN)
-        elif tag[1].startswith('J'):
-            return self.wnl.lemmatize(tag[0], wordnet.ADJ)
-        elif tag[1].startswith('R'):
-            return self.wnl.lemmatize(tag[0], wordnet.ADV)
-        elif tag[1].startswith('V'):
-            return self.wnl.lemmatize(tag[0], wordnet.VERB)
-        else:
-            return self.wnl.lemmatize(tag[0])
-
-    def fit(self, X=None, y=None):
-        return self
-
-    def transform(self, X=None, y=None):
-        print("Lemmatizing and tokenizing (wordnet)")
-        return [[self.lemmatize_with_pos(t) for t in pos_tag(word_tokenize(doc))] for doc in X]
-
 class Lemmatizer(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.wnl = WordNetLemmatizer()
@@ -114,6 +90,7 @@ class Lemmatizer(BaseEstimator, TransformerMixin):
         print("Lemmatizing using wordnet")
         return [' '.join([self.wnl.lemmatize(t) for t in word_tokenize(doc)]) for doc in X]
 
+
 class Stemmer(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.ps = PorterStemmer()
@@ -124,6 +101,7 @@ class Stemmer(BaseEstimator, TransformerMixin):
     def transform(self, X=None, y=None):
         print("Stemming using porter stemmer")
         return [' '.join([self.ps.stem(t) for t in word_tokenize(doc)]) for doc in X]
+
 
 class StopWords(BaseEstimator, TransformerMixin):
     def __init__(self):
@@ -143,26 +121,25 @@ class StopWords(BaseEstimator, TransformerMixin):
 
         return [' '.join([word for word in word_tokenize(doc) if word not in self.__stop_words]) for doc in X]
 
+
 class SpellCheckDoc(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.spell_ = SpellChecker(distance=1) 
     
     def fit(self, X=None, y=None):
         return self
-        
+
+    def _string_correction(self, doc):
+        tokens = word_tokenize(doc)
+        mispelled_words = self.spell_.unknown(tokens)
+        return " ".join([self.spell_.correction(token) if
+                         (token.lower() in mispelled_words) else token
+                         for token in tokens])
+
     def transform(self, X=None, y=None):
         print("correcting spelling")
-        
-        def _string_correction(doc):
-            tokens = word_tokenize(doc)
-            mispelled_words = self.spell_.unknown(tokens)
-            return " ".join([self.spell_.correction(token) if
-                             (token.lower() in mispelled_words) else token
-                             for token in tokens])
-
         translations = str.maketrans('', '', string.punctuation)
-
-        return [_string_correction(doc.translate(translations)) for doc in X]
+        return [self._string_correction(doc.translate(translations)) for doc in X]
 
     
 class SplitWords(BaseEstimator, TransformerMixin):
@@ -173,25 +150,11 @@ class SplitWords(BaseEstimator, TransformerMixin):
         self.__lang_filepath = None
         self.language_model_ = None
 
-    @staticmethod
-    def __keep_correctly_spelled(original_tokens, spell):
-        """ Only keep words that are correctly spelled
-        params: 
-        * original tokens: list of words
-        * spell: spellchecker.SpellChecker object
-        """
-        corrected_text = []
-        mispelled_words = spell.unknown(original_tokens.split())
-        for word in original_tokens.split():
-            if word.lower() not in mispelled_words:
-                corrected_text.append(word.upper())
-        return " ".join(corrected_text)
-    
     def fit(self, X, y=None):
         dtime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self.__lang_filepath = path.join(f'my_lang_{dtime}.txt.gz')
-        df = pd.DataFrame({'words' :[self.__keep_correctly_spelled(token, self.spell_) for token in X]})
-        word_count = dict(Counter(" ".join(df['words']).split(" "))) 
+        df = pd.DataFrame({'words': X})
+        word_count = dict(Counter(" ".join(df['words']).split(" ")))
         word_count_df = pd.DataFrame.from_dict(word_count, orient='index').reset_index()
         word_count_df.columns= ['words', 'n_appearances']
 
@@ -215,15 +178,16 @@ class SplitWords(BaseEstimator, TransformerMixin):
     def transform(self, X=None, y=None):
         print("Finding joined up words")
         
-        def _join_up_words(document):
+        def _join_up_words(doc):
             corrected_text = []
-            mispelled_words = self.spell_.unknown(document.split())
-            # TODO: Change this to use word_tokenize() ?
-            for word in document.split():
-                if word.lower() in mispelled_words:
-                    corrected_text.append(" ".join(self.language_model_.split(word)).upper())
+            tokens = word_tokenize(doc)
+            mispelled_words = self.spell_.unknown(tokens)
+
+            for token in tokens:
+                if token.lower() in mispelled_words:
+                    corrected_text.append(" ".join(self.language_model_.split(token)).upper())
                 else:
-                    corrected_text.append(word.upper())
+                    corrected_text.append(token.upper())
                 
             output = " ".join(corrected_text)
             output = re.sub(r"\b(\w) (?=\w\b)", r"\1", output)
@@ -244,9 +208,7 @@ class PipelineText:
         self.__pipeline_steps = []
         self.__pipe = None
 
-
     def extend_pipe(self, steps):
-
         self.__pipeline_steps.extend(steps)
 
     def fit_transform(self, X=None, y=None):
@@ -262,7 +224,6 @@ class PipelineText:
         """
         Combines preprocessing steps into a pipeline object
         """
-
 
         pipeline_steps=[]
 
@@ -288,7 +249,8 @@ class PipelineText:
 
             print("Saving text pipeline")
             text_pipeline_location = path.join(self.__config['pipe_path'],
-                                                   self.__config['text_pipeline_pickle_name'] + '.' + X_i.name)
+                                               self.__config['text_pipeline_pickle_name'] + '.' + X_i.name)
+
             check_and_create(self.__config['pipe_path'])
             joblib.dump(pipe, text_pipeline_location, compress=3)
 
@@ -301,7 +263,7 @@ class PipelineText:
         X_list=[]
         for header in self.__config['text_headers']:
             text_pipeline_location = path.join(self.__config['pipe_path'],
-                                                   self.__config['text_pipeline_pickle_name'] + '.' + header)
+                                               self.__config['text_pipeline_pickle_name'] + '.' + header)
 
             print("Loading text pipeline for " + header)
             pipe = joblib.load(text_pipeline_location)
