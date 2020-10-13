@@ -66,37 +66,6 @@ def configure_pipeline(data_path, experiment_path, spell=True, split_words=True,
     with open(config_path, mode='w+') as fp:
         json.dump(d, fp)
 
-# Don't need a manual method for generating n-grams, most classifiers etc seem to have such things built in.
-# Tempted to implement phrase detection though.
-# Also don't need to deal with lowercasing and stripping if I'm passing it through the stemmer tokenizers etc.
-
-# def lowercase_strip_accents_and_ownership(doc):
-#     lowercase_no_accents_doc = strip_accents_ascii(str(doc).lower())
-#     return lowercase_no_accents_doc.replace('"', '').\
-#                                     replace("\'s", "").\
-#                                     replace("\'ve", " have").\
-#                                     replace("\'re", " are").\
-#                                     replace("\'", "").\
-#                                     strip("`").\
-#                                     strip()
-
-# def stop(tokens_in, unigrams, ngrams, digits=True):
-#     new_tokens = []
-#     for token in tokens_in:
-#         ngram = token.split()
-#         if len(ngram) == 1:
-#             if ngram[0] not in unigrams and not ngram[0].isdigit():
-#                 new_tokens.append(token)
-#         else:
-#             word_in_ngrams = False
-#             for word in ngram:
-#                 if word in ngrams or (digits and word.isdigit()):
-#                     word_in_ngrams = True
-#                     break
-#             if not word_in_ngrams:
-#                 new_tokens.append(token)
-#     return new_tokens
-
 
 class LemmaTokenizer(BaseEstimator, TransformerMixin):
     # TODO does this need stopwords?
@@ -238,8 +207,6 @@ class PipelineText:
         self.__pipeline_steps = []
         self.__pipe = None
 
-        # self.__labels_hist = create_load_balance_hist(y_train)
-
     def extend_pipe(self, steps):
 
         self.__pipeline_steps.extend(steps)
@@ -319,3 +286,18 @@ class PipelineText:
     #     fig.tight_layout()
     #     plt.savefig(out_name[:-4] + suffix)
     #     plt.show()
+
+test = pd.read_excel("../../data/lcf.xlsx")
+
+test['single_text'] = test['RECDESC'].astype(str) + " " + test['EXPDESC'].astype(str)
+
+with bz2.BZ2File("../../data/proto_dat.pkl.bz2", 'wb') as pickle_file:
+
+    pkl_obj = [list(test['single_text']), list(test['EFSCODE'])]
+    pickle.dump(pkl_obj, pickle_file, protocol=4, fix_imports=False)
+
+configure_pipeline(data_path='../../data/proto_dat.pkl.bz2', experiment_path=path.join('outputs', 'soc'))
+pt = PipelineText(config_path=path.join('outputs', 'soc', 'text'))
+test = pt.fit_transform()
+
+print(test)
