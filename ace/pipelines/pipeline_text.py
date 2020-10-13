@@ -328,18 +328,3 @@ class PipelineText:
     #     fig.tight_layout()
     #     plt.savefig(out_name[:-4] + suffix)
     #     plt.show()
-
-# test = pd.read_excel("../../data/lcf.xlsx")
-#
-# test['single_text'] = test['RECDESC'].astype(str) + " " + test['EXPDESC'].astype(str)
-#
-# with bz2.BZ2File("../../data/proto_dat.pkl.bz2", 'wb') as pickle_file:
-#
-#     pkl_obj = [list(test['single_text']), list(test['EFSCODE'])]
-#     pickle.dump(pkl_obj, pickle_file, protocol=4, fix_imports=False)
-#
-# configure_pipeline(data_path='../../data/proto_dat.pkl.bz2', experiment_path=path.join('outputs', 'soc'))
-# pt = PipelineText(config_path=path.join('outputs', 'soc', 'text'))
-# test = pt.fit_transform()
-#
-# print(test)
