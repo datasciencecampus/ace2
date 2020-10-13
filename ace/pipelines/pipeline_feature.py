@@ -1,8 +1,6 @@
 import bz2
 import json
-import os
 import pickle
-import string
 from os import path
 
 import joblib
@@ -10,13 +8,12 @@ import nltk
 import pandas as pd
 import scipy
 import ace.utils.utils as ut
-from nltk.corpus import stopwords
+from nltk import word_tokenize
 from sklearn.decomposition import NMF
 from sklearn.feature_extraction.text import TfidfTransformer, CountVectorizer
 
 from ace.factories.embeddings_factory import EmbeddingsFactory
 from ace.factories.feature_selection_factory import FeatureSelectionFactory
-from ace.pipelines.pipeline_text import lowercase_strip_accents_and_ownership, StemTokenizer
 from scipy.sparse import csr_matrix
 from sklearn.pipeline import Pipeline
 
@@ -169,19 +166,12 @@ class PipelineFeatures:
         return scipy.sparse.hstack((csr_matrix(feature_columnIn).T, Xin))
 
     def __get_count_vectorizer(self):
-        tokenizer_stem = StemTokenizer()
-        stop_words = stopwords.words('english')
-        # read this from file
-        stop_words.extend(
-            ['shouldv', 'youv', 'abov', 'ani', 'becau', 'becaus', 'befor', 'doe', 'dure', 'ha', 'hi', 'onc', 'onli',
-             'ourselv', 'themselv', 'thi', 'veri', 'wa', 'whi', 'yourselv'])
         count_vectorizer = CountVectorizer(
             max_df=self.__config['max_df'],
             min_df=self.__config['min_df'],
             ngram_range=(self.__config['min_ngram'], self.__config['max_ngram']),
-            preprocessor=lowercase_strip_accents_and_ownership,
-            tokenizer=tokenizer_stem,
-            stop_words=[''.join(c for c in s if c not in string.punctuation) for s in stop_words]
+            tokenizer=word_tokenize,
+            stop_words=[]
         )
         return count_vectorizer
 
