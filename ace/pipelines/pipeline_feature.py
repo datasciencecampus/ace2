@@ -15,7 +15,7 @@ v
 
 from ace.factories.embeddings_factory import EmbeddingsFactory
 from ace.factories.feature_selection_factory import FeatureSelectionFactory
-from ace.pipelines.pipeline_text import lowercase_strip_accents_and_ownership, StemTokenizer
+from ace.pipelines.pipeline_text import lowercase_strip_accents_and_ownership, Stemmer
 from scipy.sparse import csr_matrix
 
 def configure_pipeline(experiment_path, data_path, feature_set=['frequency_matrix'], num_features=3000, idf=True,
@@ -149,7 +149,7 @@ class PipelineFeatures:
         return scipy.sparse.hstack((csr_matrix(feature_columnIn).T, Xin))
 
     def __get_count_vectorizer(self):
-        tokenizer_stem = StemTokenizer(code=self.__outdirname, exceptions=self.__exceptions)
+        tokenizer_stem = Stemmer(code=self.__outdirname, exceptions=self.__exceptions)
         stop_words = stopwords.words('english')
         # read this from file
         stop_words.extend(

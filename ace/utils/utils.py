@@ -1,3 +1,7 @@
+import os
+from os import path
+
+
 def create_load_balance_hist(yin):
     d = {}
     y = yin.tolist()
@@ -11,3 +15,7 @@ def create_load_balance_hist(yin):
 
 def strip_file_ext(file_path, file_ext='.csv'):
     return file_path.replace(file_ext,'')
+
+def check_and_create(base_path):
+    if not path.exists(base_path):
+        os.makedirs(base_path)

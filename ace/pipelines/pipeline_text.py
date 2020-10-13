@@ -31,6 +31,8 @@ import os
 import pickle
 import string
 import re
+
+import joblib
 import wordninja
 
 from collections import Counter
@@ -48,18 +50,25 @@ from matplotlib import pyplot as plt
 
 import pandas as pd
 
-from ace.utils.utils import create_load_balance_hist
+from ace.utils.utils import create_load_balance_hist, check_and_create
 
 
-def configure_pipeline(data_path, experiment_path, spell=True, split_words=True, text_header='RECDESC'):
+def configure_pipeline(experiment_path, data_path, spell=True, split_words=True, text_headers=['RECDESC'], stop_words=True,
+                       lemmatize=False, stemm=True):
     base_path = path.join(experiment_path, 'text')
     config_path = path.join(base_path, 'config.json')
+    pipe_path = path.join(base_path, 'pipe')
     d={
         'spell': spell,
         'split_words': split_words,
+        'lemmatize': lemmatize,
+        'stemm': stemm,
+        'pipe_path': pipe_path,
         'data_path': data_path,
         'base_path': base_path,
-        'text_header': text_header
+        'text_pipeline_pickle_name': 'text_pipeline.pickle',
+        'text_headers': text_headers,
+        'stop_words':stop_words
     }
     if not path.exists(base_path):
         os.makedirs(base_path)
@@ -91,22 +100,48 @@ class LemmaTokenizer(BaseEstimator, TransformerMixin):
         print("Lemmatizing and tokenizing (wordnet)")
         return [[self.lemmatize_with_pos(t) for t in pos_tag(word_tokenize(doc))] for doc in X]
 
-
-class StemTokenizer(BaseEstimator, TransformerMixin):
+class Lemmatizer(BaseEstimator, TransformerMixin):
     def __init__(self):
-        self.ps = PorterStemmer()
-
-        self.stop_words = stopwords.words('english')
-        # Read from text file ad config
-        self.stop_words.extend(['shouldv', 'youv', 'abov', 'ani', 'becau', 'becaus', 'befor', 'doe', 'dure', 'ha',
-                                'hi', 'onc', 'onli', 'ourselv', 'themselv', 'thi', 'veri', 'wa', 'whi', 'yourselv'])
+        self.wnl = WordNetLemmatizer()
 
     def fit(self, X, y=None):
         return self
 
     def transform(self, X, y=None):
-        print("Stemming and tokenizing (porter)")
-        return [[self.ps.stem(t) for t in word_tokenize(doc) if t not in self.stop_words] for doc in X]
+        print("Stemming using porter stemmer")
+        return [' '.join([self.wnl.lemmatize(t) for t in word_tokenize(doc)]) for doc in X]
+
+class Stemmer(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        self.ps = PorterStemmer()
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None):
+        print("Stemming using porter stemmer")
+        return [' '.join([self.ps.stem(t) for t in word_tokenize(doc)]) for doc in X]
+
+
+
+class StopWords(BaseEstimator, TransformerMixin):
+    def __init__(self):
+
+        self.__stop_words = stopwords.words('english')
+
+        with open(os.path.join('config', 'stopwords.txt')) as f:
+            extra_stop_words = f.read().splitlines()
+        # Read from text file ad config
+        self.__stop_words.extend(extra_stop_words)
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None):
+        print("removing stopwords")
+
+        return [' '.join([word for word in word_tokenize(doc) if word not in self.__stop_words]) for doc in X]
+
 
 
 class SpellCheckDoc(BaseEstimator, TransformerMixin):
@@ -207,6 +242,8 @@ class PipelineText:
         self.__pipeline_steps = []
         self.__pipe = None
 
+
+
     def extend_pipe(self, steps):
 
         self.__pipeline_steps.extend(steps)
@@ -225,17 +262,34 @@ class PipelineText:
         Combines preprocessing steps into a pipeline object
         """
 
-        spell = SpellCheckDoc()
-        split_words = SplitWords()
-        # stem_tokenizer = StemTokenizer()
-        lemma_tokenizer = LemmaTokenizer()
 
-        # pipeline_steps = [x for x in [("SC", spell), ("SW", split_words), ("ST", stem_tokenizer)]]
-        pipeline_steps = [x for x in [("SC", spell), ("SW", split_words), ("LT", lemma_tokenizer)]]
+        pipeline_steps=[]
+
+        if self.__config['spell']:
+            pipeline_steps.append(('spell', SpellCheckDoc()))
+        if self.__config['split']:
+            pipeline_steps.append(('split', SplitWords()))
+        if self.__config['stop_words']:
+            pipeline_steps.append(('stop', StopWords()))
+        if self.__config['lemmatize']:
+            pipeline_steps.append(('lemmatize', Lemmatizer()))
+        if self.__config['stemm']:
+            pipeline_steps.append(('stemm', Stemmer()))
 
         self.__pipeline_steps.extend(pipeline_steps)
 
-        self.__pipe = Pipeline(self.__pipeline_steps)
+        pipe = Pipeline(self.__pipeline_steps)
+
+        for header in self.__config['text_headers']:
+            print("Fitting pipeline for " + header)
+            X_i = X[header]
+            pipe.fit(X_i, y)
+
+            print("Saving text pipeline")
+            features_pipeline_location = path.join(self.__config['pipe_path'],
+                                                   self.__config['text_pipeline_pickle_name'] + '.' + X_i.name)
+            check_and_create(self.__config['pipe_path'])
+            joblib.dump(pipe, features_pipeline_location, compress=3)
         self.__pipe.fit(X, y)
 
     def transform(self, X=None, y=None):
@@ -244,18 +298,26 @@ class PipelineText:
             with bz2.BZ2File(self.__config['data_path'], 'rb') as pickle_file:
                 X, y = pickle.load(pickle_file)
 
-        print("Transforming data")
-        X = self.__pipe.transform(X)
+        X_list=[]
+        for header in self.__config['text_headers']:
+            text_pipeline_location = path.join(self.__config['pipe_path'],
+                                                   self.__config['text_pipeline_pickle_name'] + '.' + header)
 
-        file_name = '_text_'
+            print("Loading text pipeline for " + header)
+            pipe = joblib.load(text_pipeline_location)
+            print("Transforming pipeline for " + header)
+            X_i = X[header]
+            pipe.fit(X_i, y)
 
-        file_name_base = self.__config['base_path']
-        filename_pickle = path.join(file_name_base, file_name + '.pkl.bz2')
+            file_name_base = self.__config['base_path']
+            filename_pickle = path.join(file_name_base, header + '.pkl.bz2')
 
-        with bz2.BZ2File(filename_pickle, 'wb') as pickle_file:
-            pickle.dump(X, pickle_file, protocol=4, fix_imports=False)
+            X_list.append(X_i)
 
-        return X
+            with bz2.BZ2File(filename_pickle, 'wb') as pickle_file:
+                pickle.dump(X, pickle_file, protocol=4, fix_imports=False)
+
+        return X_list
 
 
     # def __load_balancing_graph(self,  clf, probabilities, suffix='labels_graph',
@@ -287,17 +349,17 @@ class PipelineText:
     #     plt.savefig(out_name[:-4] + suffix)
     #     plt.show()
 
-test = pd.read_excel("../../data/lcf.xlsx")
-
-test['single_text'] = test['RECDESC'].astype(str) + " " + test['EXPDESC'].astype(str)
-
-with bz2.BZ2File("../../data/proto_dat.pkl.bz2", 'wb') as pickle_file:
-
-    pkl_obj = [list(test['single_text']), list(test['EFSCODE'])]
-    pickle.dump(pkl_obj, pickle_file, protocol=4, fix_imports=False)
-
-configure_pipeline(data_path='../../data/proto_dat.pkl.bz2', experiment_path=path.join('outputs', 'soc'))
-pt = PipelineText(config_path=path.join('outputs', 'soc', 'text'))
-test = pt.fit_transform()
-
-print(test)
+# test = pd.read_excel("../../data/lcf.xlsx")
+#
+# test['single_text'] = test['RECDESC'].astype(str) + " " + test['EXPDESC'].astype(str)
+#
+# with bz2.BZ2File("../../data/proto_dat.pkl.bz2", 'wb') as pickle_file:
+#
+#     pkl_obj = [list(test['single_text']), list(test['EFSCODE'])]
+#     pickle.dump(pkl_obj, pickle_file, protocol=4, fix_imports=False)
+#
+# configure_pipeline(data_path='../../data/proto_dat.pkl.bz2', experiment_path=path.join('outputs', 'soc'))
+# pt = PipelineText(config_path=path.join('outputs', 'soc', 'text'))
+# test = pt.fit_transform()
+#
+# print(test)
