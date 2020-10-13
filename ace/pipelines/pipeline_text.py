@@ -52,8 +52,9 @@ import pandas as pd
 
 from ace.utils.utils import create_load_balance_hist, check_and_create
 
-
 # TODO lowercase as pipeline step before stem lemma
+import nltk
+nltk.download('stopwords')
 
 
 def configure_pipeline(experiment_path, data_path, spell=True, split_words=True, text_headers=['RECDESC'], stop_words=True,
@@ -314,7 +315,6 @@ class PipelineText:
             pickle.dump(X, pickle_file, protocol=4, fix_imports=False)
 
         return X_list
-
 
     # def __load_balancing_graph(self,  clf, probabilities, suffix='labels_graph',
     #                            title='Label Counts vs Max Probabilities for: ', ax1_ylabel='max probability'):

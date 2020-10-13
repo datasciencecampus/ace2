@@ -56,7 +56,6 @@ class PipelineFeatureTest(unittest.TestCase):
         self.assertEqual(n_rows, 10)
         self.assertEqual(n_cols, 70)
 
-
     @classmethod
     def tearDownClass(self):
         shutil.rmtree(self.__experiment_dir)

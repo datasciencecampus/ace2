@@ -1,8 +1,6 @@
 import bz2
 import json
-import os
 import pickle
-import string
 from os import path
 
 import joblib
@@ -168,7 +166,6 @@ class PipelineFeatures:
         return scipy.sparse.hstack((csr_matrix(feature_columnIn).T, Xin))
 
     def __get_count_vectorizer(self):
-        # read this from file
         count_vectorizer = CountVectorizer(
             max_df=self.__config['max_df'],
             min_df=self.__config['min_df'],
