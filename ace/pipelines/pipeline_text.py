@@ -48,6 +48,8 @@ from matplotlib import pyplot as plt
 
 import pandas as pd
 
+import nltk
+nltk.download('stopwords')
 from ace.utils.utils import create_load_balance_hist
 
 
@@ -257,7 +259,6 @@ class PipelineText:
 
         return X
 
-
     # def __load_balancing_graph(self,  clf, probabilities, suffix='labels_graph',
     #                            title='Label Counts vs Max Probabilities for: ', ax1_ylabel='max probability'):
     #     classes = self.__classes
@@ -301,3 +302,4 @@ pt = PipelineText(config_path=path.join('outputs', 'soc', 'text'))
 test = pt.fit_transform()
 
 print(test)
+
