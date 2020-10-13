@@ -52,17 +52,17 @@ import pandas as pd
 
 from ace.utils.utils import create_load_balance_hist, check_and_create
 
-# TODO lowercase as pipeline step before stem lemma
 import nltk
 nltk.download('stopwords')
 
 
-def configure_pipeline(experiment_path, data_path, spell=True, split_words=True, text_headers=['RECDESC'], stop_words=True,
-                       lemmatize=False, stemm=False):
+def configure_pipeline(experiment_path, data_path, clean=True, spell=True, split_words=True, text_headers=['RECDESC'],
+                       stop_words=True, lemmatize=False, stemm=False):
     base_path = path.join(experiment_path, 'text')
     config_path = path.join(base_path, 'config.json')
     pipe_path = path.join(base_path, 'pipe')
     d={
+        'clean': clean,
         'spell': spell,
         'split_words': split_words,
         'lemmatize': lemmatize,
@@ -77,6 +77,26 @@ def configure_pipeline(experiment_path, data_path, spell=True, split_words=True,
     check_and_create(base_path)
     with open(config_path, mode='w+') as fp:
         json.dump(d, fp)
+
+
+class Cleaner(BaseEstimator, TransformerMixin):
+
+    @staticmethod
+    def lowercase_strip_accents_and_ownership(doc):
+        lowercase_no_accents_doc = strip_accents_ascii(str(doc).lower())
+        return lowercase_no_accents_doc.replace('"', '').\
+                                        replace("\'s", "").\
+                                        replace("\'ve", " have").\
+                                        replace("\'re", " are").\
+                                        replace("\'", "").\
+                                        strip("`").\
+                                        strip()
+
+    def fit(self, X=None, y=None):
+        return self
+
+    def transform(self, X=None, y=None):
+        return [self.lowercase_strip_accents_and_ownership(doc) for doc in X]
 
 
 class Lemmatizer(BaseEstimator, TransformerMixin):
@@ -227,6 +247,8 @@ class PipelineText:
 
         pipeline_steps=[]
 
+        if self.__config['clean']:
+            pipeline_steps.append(('clean', Cleaner()))
         if self.__config['spell']:
             pipeline_steps.append(('spell', SpellCheckDoc()))
         if self.__config['split_words']:
