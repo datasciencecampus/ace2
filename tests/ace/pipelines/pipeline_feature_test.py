@@ -3,11 +3,11 @@ import unittest
 
 import pandas as pd
 
-from ace.pipelines.pipeline_text import configure_pipeline, PipelineText
+from ace.pipelines.pipeline_feature import configure_pipeline, PipelineFeatures
 import shutil
 
 
-class PipelineTextTest(unittest.TestCase):
+class PipelineFeatureTest(unittest.TestCase):
     @classmethod
     def setUpClass(self):
         self.__experiment_dir=os.path.join('tests','exp')
@@ -29,29 +29,36 @@ class PipelineTextTest(unittest.TestCase):
 
     def test_config_file_non_empty(self):
         configure_pipeline(self.__experiment_dir, 'data')
-        config_path=os.path.join(self.__experiment_dir, 'text', 'config.json')
+        config_path=os.path.join(self.__experiment_dir, 'features', 'config.json')
         filesize = os.path.getsize(config_path)
         self.assertNotEqual(filesize,0)
 
     def test_features_dims(self):
-        configure_pipeline(self.__experiment_dir, 'data', text_headers=['text1'])
-        pipe_text = PipelineText(self.__experiment_dir)
-        pipe_text.fit(self.__text, self.__text['label'])
-        X=pipe_text.transform(self.__text, self.__text['label'])
-        n_cols=len(X)
+        configure_pipeline(self.__experiment_dir, 'data', min_df=1)
+        feature_pipe = PipelineFeatures(self.__experiment_dir)
+        feature_pipe.fit([self.__text['text1']], self.__text['label'])
+        X=feature_pipe.transform([self.__text['text1']], self.__text['label'])
+        n_rows = X.shape[0]
+        n_cols=X.shape[1]
 
-        self.assertEqual(n_cols, 1)
+        self.assertEqual(n_rows, 10)
+        self.assertEqual(n_cols, 66)
 
     def test_features_dims_two_text_olumns(self):
-        configure_pipeline(self.__experiment_dir, 'data', text_headers=['text1', 'text2'])
-        feature_pipe = PipelineText(self.__experiment_dir)
-        feature_pipe.fit(self.__text, self.__text['label'])
-        X=feature_pipe.transform(self.__text, self.__text['label'])
-        n_cols=len(X)
+        configure_pipeline(self.__experiment_dir, 'data', min_df=1)
+        feature_pipe = PipelineFeatures(self.__experiment_dir)
+        X_text=[self.__text['text1'], self.__text['text2']]
+        feature_pipe.fit(X_text, self.__text['label'])
+        X=feature_pipe.transform(X_text, self.__text['label'])
+        n_rows = X.shape[0]
+        n_cols=X.shape[1]
 
-        self.assertEqual(n_cols, 2)
+        self.assertEqual(n_rows, 10)
+        self.assertEqual(n_cols, 70)
 
 
     @classmethod
     def tearDownClass(self):
         shutil.rmtree(self.__experiment_dir)
+
+

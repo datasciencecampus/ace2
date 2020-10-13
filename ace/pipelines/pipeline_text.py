@@ -53,8 +53,11 @@ import pandas as pd
 from ace.utils.utils import create_load_balance_hist, check_and_create
 
 
+# TODO lowercase as pipeline step before stem lemma
+
+
 def configure_pipeline(experiment_path, data_path, spell=True, split_words=True, text_headers=['RECDESC'], stop_words=True,
-                       lemmatize=False, stemm=True):
+                       lemmatize=False, stemm=False):
     base_path = path.join(experiment_path, 'text')
     config_path = path.join(base_path, 'config.json')
     pipe_path = path.join(base_path, 'pipe')
@@ -70,8 +73,7 @@ def configure_pipeline(experiment_path, data_path, spell=True, split_words=True,
         'text_headers': text_headers,
         'stop_words':stop_words
     }
-    if not path.exists(base_path):
-        os.makedirs(base_path)
+    check_and_create(base_path)
     with open(config_path, mode='w+') as fp:
         json.dump(d, fp)
 
@@ -93,10 +95,10 @@ class LemmaTokenizer(BaseEstimator, TransformerMixin):
         else:
             return self.wnl.lemmatize(tag[0])
 
-    def fit(self, X, y=None):
+    def fit(self, X=None, y=None):
         return self
 
-    def transform(self, X, y=None):
+    def transform(self, X=None, y=None):
         print("Lemmatizing and tokenizing (wordnet)")
         return [[self.lemmatize_with_pos(t) for t in pos_tag(word_tokenize(doc))] for doc in X]
 
@@ -104,25 +106,23 @@ class Lemmatizer(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.wnl = WordNetLemmatizer()
 
-    def fit(self, X, y=None):
+    def fit(self, X=None, y=None):
         return self
 
-    def transform(self, X, y=None):
-        print("Stemming using porter stemmer")
+    def transform(self, X=None, y=None):
+        print("Lemmatizing using wordnet")
         return [' '.join([self.wnl.lemmatize(t) for t in word_tokenize(doc)]) for doc in X]
 
 class Stemmer(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.ps = PorterStemmer()
 
-    def fit(self, X, y=None):
+    def fit(self, X=None, y=None):
         return self
 
-    def transform(self, X, y=None):
+    def transform(self, X=None, y=None):
         print("Stemming using porter stemmer")
         return [' '.join([self.ps.stem(t) for t in word_tokenize(doc)]) for doc in X]
-
-
 
 class StopWords(BaseEstimator, TransformerMixin):
     def __init__(self):
@@ -134,24 +134,22 @@ class StopWords(BaseEstimator, TransformerMixin):
         # Read from text file ad config
         self.__stop_words.extend(extra_stop_words)
 
-    def fit(self, X, y=None):
+    def fit(self, X=None, y=None):
         return self
 
-    def transform(self, X, y=None):
+    def transform(self, X=None, y=None):
         print("removing stopwords")
 
         return [' '.join([word for word in word_tokenize(doc) if word not in self.__stop_words]) for doc in X]
-
-
 
 class SpellCheckDoc(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.spell_ = SpellChecker(distance=1) 
     
-    def fit(self, X, y=None):
+    def fit(self, X=None, y=None):
         return self
         
-    def transform(self, X, y=None):
+    def transform(self, X=None, y=None):
         print("correcting spelling")
         
         def _string_correction(doc):
@@ -213,7 +211,7 @@ class SplitWords(BaseEstimator, TransformerMixin):
 
         return self
         
-    def transform(self, X):
+    def transform(self, X=None, y=None):
         print("Finding joined up words")
         
         def _join_up_words(document):
@@ -234,14 +232,16 @@ class SplitWords(BaseEstimator, TransformerMixin):
 
 
 class PipelineText:
-    def __init__(self, config_path):
+    def __init__(self, experiment_path):
 
-        with open(path.join(config_path, 'config.json'), 'r') as fp:
+        base_path = path.join(experiment_path, 'text')
+        config_path = path.join(base_path, 'config.json')
+
+        with open(config_path, 'r') as fp:
             self.__config = json.load(fp)
 
         self.__pipeline_steps = []
         self.__pipe = None
-
 
 
     def extend_pipe(self, steps):
@@ -254,7 +254,7 @@ class PipelineText:
 
     def fit(self, X=None, y=None):
 
-        if not X:
+        if X is None:
             with bz2.BZ2File(self.__config['data_path'], 'rb') as pickle_file:
                 X, y = pickle.load(pickle_file)
 
@@ -267,7 +267,7 @@ class PipelineText:
 
         if self.__config['spell']:
             pipeline_steps.append(('spell', SpellCheckDoc()))
-        if self.__config['split']:
+        if self.__config['split_words']:
             pipeline_steps.append(('split', SplitWords()))
         if self.__config['stop_words']:
             pipeline_steps.append(('stop', StopWords()))
@@ -286,15 +286,14 @@ class PipelineText:
             pipe.fit(X_i, y)
 
             print("Saving text pipeline")
-            features_pipeline_location = path.join(self.__config['pipe_path'],
+            text_pipeline_location = path.join(self.__config['pipe_path'],
                                                    self.__config['text_pipeline_pickle_name'] + '.' + X_i.name)
             check_and_create(self.__config['pipe_path'])
-            joblib.dump(pipe, features_pipeline_location, compress=3)
-        self.__pipe.fit(X, y)
+            joblib.dump(pipe, text_pipeline_location, compress=3)
 
     def transform(self, X=None, y=None):
 
-        if not X:
+        if X is None:
             with bz2.BZ2File(self.__config['data_path'], 'rb') as pickle_file:
                 X, y = pickle.load(pickle_file)
 
@@ -307,15 +306,12 @@ class PipelineText:
             pipe = joblib.load(text_pipeline_location)
             print("Transforming pipeline for " + header)
             X_i = X[header]
-            pipe.fit(X_i, y)
+            X_list.append(pipe.transform(X=X_i))
 
-            file_name_base = self.__config['base_path']
-            filename_pickle = path.join(file_name_base, header + '.pkl.bz2')
-
-            X_list.append(X_i)
-
-            with bz2.BZ2File(filename_pickle, 'wb') as pickle_file:
-                pickle.dump(X, pickle_file, protocol=4, fix_imports=False)
+        file_name_base = self.__config['base_path']
+        filename_pickle = path.join(file_name_base, 'text_features.pkl.bz2')
+        with bz2.BZ2File(filename_pickle, 'wb') as pickle_file:
+            pickle.dump(X, pickle_file, protocol=4, fix_imports=False)
 
         return X_list
 

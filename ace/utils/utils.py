@@ -13,8 +13,10 @@ def create_load_balance_hist(yin):
             d[key] = 1
     return d
 
+
 def strip_file_ext(file_path, file_ext='.csv'):
     return file_path.replace(file_ext,'')
+
 
 def check_and_create(base_path):
     if not path.exists(base_path):
