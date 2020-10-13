@@ -47,6 +47,8 @@ from sklearn.pipeline import Pipeline
 
 from  matplotlib import pyplot as plt
 
+import nltk
+nltk.download('stopwords')
 from ace.utils.utils import create_load_balance_hist
 
 
@@ -312,9 +314,9 @@ class PipelineText:
         plt.show()
 
 
-configure_pipeline(data_path='data/USPTO-random-1000.pkl.bz2', experiment_path=path.join('outputs','soc'))
-pt = PipelineText(config_path=path.join('outputs', 'soc','text'))
-pt.fit_transform()
+# configure_pipeline(data_path='data/USPTO-random-1000.pkl.bz2', experiment_path=path.join('outputs','soc'))
+# pt = PipelineText(config_path=path.join('outputs', 'soc','text'))
+# pt.fit_transform()
 
 # df=pd.read_excel('data/lcf.xlsx')
 # X= df[['RECDESC', 'EXPDESC', 'Price', 'Shop']]
