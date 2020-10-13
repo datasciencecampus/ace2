@@ -9,6 +9,10 @@ data/*
 cached_features/*
 .idea/*
 
+# Directories
+venv/
+.idea/
+
 # Exceptions
 !outputs/readme.txt
 !models/readme.txt
