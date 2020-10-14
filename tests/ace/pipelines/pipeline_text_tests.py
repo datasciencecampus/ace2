@@ -10,7 +10,7 @@ import shutil
 class PipelineTextTest(unittest.TestCase):
     @classmethod
     def setUpClass(self):
-        self.__experiment_dir=os.path.join('tests','exp')
+        self.__experiment_dir=os.path.join('tests', 'exp')
         self.__text = pd.DataFrame.from_dict(
             columns=['text1', 'text2', 'feat1', 'label'],
             orient='index',
@@ -42,7 +42,7 @@ class PipelineTextTest(unittest.TestCase):
 
         self.assertEqual(n_cols, 1)
 
-    def test_features_dims_two_text_olumns(self):
+    def test_features_dims_two_text_columns(self):
         configure_pipeline(self.__experiment_dir, 'data', text_headers=['text1', 'text2'])
         feature_pipe = PipelineText(self.__experiment_dir)
         feature_pipe.fit(self.__text, self.__text['label'])
