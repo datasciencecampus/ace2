@@ -3,6 +3,8 @@ import sys
 import json
 import joblib
 import matplotlib
+from sklearn.base import BaseEstimator, TransformerMixin
+
 matplotlib.use('Agg')
 import numpy as np
 import pandas as pd
@@ -22,39 +24,134 @@ from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSe
 from sklearn.preprocessing import label_binarize, normalize
 
 from ace.factories.ml_factory import MLFactory
-from ace.utils.utils import create_load_balance_hist, MemoryMonitor
 from scripts.qa_results import qa_results_by_class, join_compare_systems
 
 matplotlib.use('Agg')
 
 
-def configure_pipeline(experiment_path, data_path, alg_type, multi=True, dirname='soc',
-                  data_filename='training_data.pkl.bz2',
-                  train_test_ratio=0.75, threshold=0.5, accuracy=0.9):
-    base_path = path.join(experiment_path, 'features')
+def configure_pipeline(experiment_path,  multi=True, dirname='soc', data_filename='training_data.pkl.bz2',
+                  train_test_ratio=0.75, threshold=0.5, accuracy=0.9, test=True, deploy=True, validation_paths=[]):
+
+    base_path = path.join(experiment_path, 'ml')
+    features_path = path.join(experiment_path, 'features')
     config_path = path.join(base_path,  'config.json')
     pipe_path = path.join(base_path, 'pipe')
     d={
 
-        'alg_type':alg_type,
         'multi': multi,
         'dirname': dirname,
+        'base_path': base_path,
+        'features_path':features_path,
         'data_filename':data_filename,
         'train_test_ratio':train_test_ratio,
         'threshold': threshold,
         'accuracy':accuracy,
-
-
+        'test':test,
+        'validation_paths':validation_paths
     }
     with open(config_path, 'w') as fp: json.dump(d, fp)
+
+
+
+
+
+class MLTrainTest(BaseEstimator, TransformerMixin):
+    # TODO does this need stopwords? No, stop will be done as part of text processing
+    def __init__(self, config, classifier=None):
+        self.__classifier = classifier
+        self.__name = classifier.__class__.__name__
+        ratio = config['ratio']
+        self.__pickle_path = path.join(config['base_path'], self.__name)
+        X, y = pd.read_pickle(path.join(config['features_path'], '_xy.pkl.bz2'))
+
+        self.__X_train, self.__X_test, self.__y_train, self.__y_test = train_test_split(X, y,
+                                                                                        test_size=1.0 - ratio,
+                                                                                        random_state=42, shuffle=True)
+        self.__accuracy=config['accuracy']
+        self.__threshold = config['threshold']
+        self.__classes = []
+
+
+
+    def fit(self, X=None, y=None):
+        print("Training a " + classifier + " with " + str(len(self.__y_train)) + " rows")
+        self.__classifier.fit(self.__X_train, self.__y_train)
+        joblib.dump(self.__classifier, self.__pickle_path, compress=9)
+        self.__classes = self.__classifier.classes_
+        return self
+
+    def transform(self, X, y):
+        print("transforming data using: " + self.__name)
+        predictions = classification_model.predict(self.__X_test)
+        probabilities = classification_model.predict_proba(self.__X_test)
+        thresholds = self.__create_thresholds_list(predictions, probabilities, self.__y_test)
+        joblib.dump(thresholds, self.__pickle_path+'_thresholds', compress=9)
+        accuracy = accuracy_score(self.__y_test, predictions)
+
+        print("Accuracy: " + str(accuracy))
+
+    def __create_thresholds_list(self, predictions, probabilities, y):
+        accuracy = self.__accuracy
+        highest_threshold = self.__threshold
+        y = y.tolist()
+        prediction_probs = probabilities.max(axis=1)
+
+        classes_y = set(y)
+        classes_train = set(self.__classes)
+        all_classes = list(classes_y.union(classes_train))
+
+        d = {}
+        thresholds = {}
+        for idx, cls in enumerate(y):
+            if cls not in d:
+                d[cls] = []
+
+            d[cls].append((prediction_probs[idx], y[idx] == predictions[idx]))
+
+        for cls in all_classes:
+            if not accuracy or cls not in d or len(d[cls]) < 500:
+                thresholds[cls] = highest_threshold
+                continue
+            tups = d[cls]
+            sorted_tups = sorted(tups, key=lambda tup: tup[0], reverse=True)
+
+            lastval = sorted_tups.pop()
+
+            while lastval[1] == 0 and len(tups) > 0:
+                lastval = sorted_tups.pop()
+            sorted_tups.append(lastval)
+
+            accumulator = []
+            total = 0
+
+            for tup in sorted_tups:
+                total += tup[1]
+                accumulator.append(total)
+
+            for i in range(len(accumulator)):
+                accumulator[i] /= i + 1
+
+            r_tups = list(reversed(sorted_tups))
+            r_accum = list(reversed(accumulator))
+
+            threshold = highest_threshold
+            for i in range(len(r_accum)):
+                if r_accum[i] >= accuracy:
+                    threshold = r_tups[i][0]
+                    break
+            thresholds[cls] = threshold
+        for idx, cls in enumerate(all_classes):
+            print(str(cls) + ': ' + str(thresholds[cls]))
+        return thresholds
         
 
 class PipelineML:
-    def __init__(self):
+    def __init__(self, config_filename, classifier):
 
         with open(config_filename, 'w') as fp:
             self.__config = json.load( fp)
 
+        self.__classifier = classifier
         dtime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self.__data_dir = path.join('data',dirname)
         self.__data_filename = data_filename
@@ -84,13 +181,12 @@ class PipelineML:
                
         self.__X, self.__y = pd.read_pickle(path.join('cached_features', dirname, '_xy.pkl.bz2'))
 
-    def __update_thresholds(self,y_in):
-        y=y_in.tolist()
-        for cls in y:
-            if cls not in self.__thresholds:
-                self.__thresholds[cls]=1.1
+
 
     def fit(self, X, y):
+        if X is None:
+            with bz2.BZ2File(self.__config['data_path'], 'rb') as pickle_file:
+                X, y = pickle.load(pickle_file)
         X_train, X_test, y_train, y_test = train_test_split(self.__X, self.__y, test_size=1.0 - self.__train_test_ratio,
                                                             random_state=42, shuffle=True)
 
@@ -213,81 +309,16 @@ class PipelineML:
                                  id_col="id")      
         
 
+    def __update_thresholds(self,y_in):
+        y=y_in.tolist()
+        for cls in y:
+            if cls not in self.__thresholds:
+                self.__thresholds[cls]=1.1
 
-    def __create_thresholds_list(self, predictions, probabilities, y):
-        accuracy=self.__accuracy
-        highest_threshold=self.__threshold
-        y = y.tolist()
-        prediction_probs = probabilities.max(axis=1)
-
-        classes_y = set(y)
-        classes_train = set(self.__classes)
-        all_classes = list(classes_y.union(classes_train))
-        
-        d={}
-        thresholds={}
-        for idx, cls in enumerate(y):
-          if cls not in d:
-            d[cls]=[]
-          
-          d[cls].append((prediction_probs[idx], y[idx]==predictions[idx]))
-          
-        for cls in all_classes:
-          if not accuracy or cls not in d or len(d[cls]) < 500:
-            thresholds[cls]=highest_threshold
-            continue
-          tups = d[cls]
-          sorted_tups = sorted(tups, key=lambda tup: tup[0], reverse=True)
-
-          lastval=sorted_tups.pop()
-          
-          while lastval[1] ==0 and len(tups)>0:
-            lastval=sorted_tups.pop()
-          sorted_tups.append(lastval)
-          
-          accumulator=[]
-          total=0
-          
-          for tup in sorted_tups:
-            total+=tup[1]
-            accumulator.append(total)
-          
-          for i in range(len(accumulator)):
-            accumulator[i]/=i+1
-          
-          r_tups=list(reversed(sorted_tups))
-          r_accum=list(reversed(accumulator))
-          
-    
-          threshold = highest_threshold
-          for i in range(len(r_accum)):
-            if r_accum[i]>=accuracy:
-              threshold=r_tups[i][0]
-              break
-          thresholds[cls]=threshold
-        for idx, cls in enumerate(all_classes):
-          print (str(cls) +': '+str(thresholds[cls]))
-        return thresholds
 
     def __create_metrics(self, predictions, probabilities, y, remove_unclassifiable=True):
         
-        prediction_probs = probabilities.max(axis=1)
-        self.__all_probs = probabilities
-        
-        if self.__threshold:
-            if self.__accuracy:
-                self.__classifiable = []
-        
-                for idx, cls in enumerate(predictions):
-                    self.__classifiable.append(prediction_probs[idx] > self.__thresholds[cls])
-     
-            else: 
-                self.__classifiable = prediction_probs > self.__threshold
-        if remove_unclassifiable:
-            predictions = predictions[self.__classifiable]
-            probabilities = probabilities[self.__classifiable]
-            y = y[self.__classifiable]
-            prediction_probs = prediction_probs[self.__classifiable]
+
         
         true_positive = [x == y for x, y in zip(predictions, y)]
         self.__probs = np.array(probabilities)
@@ -337,49 +368,20 @@ class PipelineML:
         
         return samples_df, labels_df
 
-    def __classify(self, X_test, classification_model, y_test, clf_str):
-        scores=[]
-        predictions = classification_model.predict(X_test)
-        probabilities = classification_model.predict_proba(X_test)
-        accuracy = accuracy_score(y_test, predictions)
 
-        sensitivity = 0
-        specificity = 0
-        # todo for each label...then rid of multi-labeled
-        #  move to metrics. Do one for each label, like accuracies..
-        if not self.__multilabeled:
-            cm = confusion_matrix(y_test, predictions)
-            tn, fp, fn, tp = cm.ravel()
-            sensitivity = tp / (tp + fn)
-            specificity = tn / (tn + fp)
 
-            print("Sensitivity: " + str(sensitivity))
-            print("Specificity: " + str(specificity))
-            print("tn: " + str(tn))
-            print("fp: " + str(fp))
-            print("fn: " + str(fn))
-            print("tp: " + str(tp))
 
-        scores.append((accuracy, sensitivity, specificity, clf_str))
-        # TODO: we do not return this scores variable anywhere
-        return probabilities, predictions
 
-    def get_prediction(self, datain, model_name):
-        X_tfidf_test = self.__transform_using_saved_tfidf(datain)
-        clf = joblib.load(path.join(self.__models_dir, model_name + self.CL_FILENAME_PART))
-        predictions = clf.predict(X_tfidf_test)
 
-    def __create_thresholds_array(self, fpr, tpr, thresholds):
-        max_tpr = 0.0
-        idx = 0
-        for i in range(len(fpr)):
-            fpri = fpr[i]
-            if fpri == 0:
-                break
-            if tpr[i] > max_tpr and fpri == 0:
-                max_tpr = tpr[i]
-                idx = i
-        return thresholds[idx]
+
+
+
+
+
+
+
+
+
 
     def __save_roc_plot(self, clf, y_in):
         classes = self.__classes
@@ -466,21 +468,13 @@ class PipelineML:
         plt.savefig(out_name)
         plt.show()
     
-    def __get_key(self, item):
-        return item[0]
+
 
     def __output_graphs(self, classifier, y):
         df = self.__samples_df[['prediction_probabilities', 'prediction_labels', 'true_positives',
                                 'true_label']]
         df.to_csv(path.join(self.__outputs_dir, classifier + '.csv'))
-        self.__save_confidence_plot(df, classifier)
-        self.__save_roc_plot(classifier, y)
 
-        self.__load_balancing_graph(classifier, self.__labels_df['max_probabilities'], suffix='max_probs_graph')
-        self.__load_balancing_graph(classifier, self.__labels_df['min_probabilities'], suffix='min_probs_graph',
-                                    title='Label Counts vs Min Probabilities for: ', ax1_ylabel='min probability')
-        self.__load_balancing_graph(classifier, self.__labels_df['accuracies'], suffix='accuracies_graph',
-                                    title='Label Counts vs Accuracies for: ', ax1_ylabel='accuracy')
 
     def __confidence_score(self):
         classes = self.__classes
@@ -496,3 +490,33 @@ class PipelineML:
         new_acc = sum([p == a for p, a in zip(new_predictions, actual)]) / len(actual) * 100
 
         return new_acc
+
+
+    def __load_balancing_graph(self,  clf, probabilities, suffix='labels_graph',
+                               title='Label Counts vs Max Probabilities for: ', ax1_ylabel='max probability'):
+        classes = self.__classes
+        out_name = path.join(self.__outputs_dir, clf + '_load_balanced')
+        n_classes = len(classes)
+        fig, ax1 = plt.subplots()
+        ax2 = ax1.twinx()  # set up the 2nd axis
+        label_counts = [self.__labels_hist[x] for x in classes]
+        sorted_counts_indices = sorted(range(len(label_counts)), key=lambda k: label_counts[k])
+        sorted_probs = [probabilities[x] for x in sorted_counts_indices]
+        sorted_classes = [classes[x] for x in sorted_counts_indices]
+        sorted_label_counts = [label_counts[x] for x in sorted_counts_indices]
+        ax1.plot(sorted_probs)  # plot the probability thresholds line
+        nticks = range(n_classes)
+
+        # the next few lines plot the fiscal year data as bar plots and changes the color for each.
+        ax2.bar(nticks, sorted_label_counts, width=2, alpha=0.2, color='orange')
+        ax2.grid(b=False)  # turn off grid #2
+        ax1.set_title(title + clf)
+        ax1.set_ylabel(ax1_ylabel)
+        ax2.set_ylabel('Label Counts')
+        # Set the x-axis labels to be more meaningful than just some random dates.
+        ax1.axes.set_xticklabels(sorted_classes, rotation='vertical', fontsize=4)
+        ax1.set_xlabel('Labels')
+        # Tweak spacing to prevent clipping of ylabel
+        fig.tight_layout()
+        plt.savefig(out_name[:-4] + suffix)
+        plt.show()

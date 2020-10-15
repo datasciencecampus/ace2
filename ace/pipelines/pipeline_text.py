@@ -80,7 +80,7 @@ def configure_pipeline(experiment_path, data_path, spell=True, split_words=True,
 
 
 class LemmaTokenizer(BaseEstimator, TransformerMixin):
-    # TODO does this need stopwords?
+    # TODO does this need stopwords? No, stop will be done as part of text processing
     def __init__(self):
         self.wnl = WordNetLemmatizer()
 
@@ -316,34 +316,7 @@ class PipelineText:
 
         return X_list
 
-    # def __load_balancing_graph(self,  clf, probabilities, suffix='labels_graph',
-    #                            title='Label Counts vs Max Probabilities for: ', ax1_ylabel='max probability'):
-    #     classes = self.__classes
-    #     out_name = path.join(self.__outputs_dir, clf + '_load_balanced')
-    #     n_classes = len(classes)
-    #     fig, ax1 = plt.subplots()
-    #     ax2 = ax1.twinx()  # set up the 2nd axis
-    #     label_counts = [self.__labels_hist[x] for x in classes]
-    #     sorted_counts_indices = sorted(range(len(label_counts)), key=lambda k: label_counts[k])
-    #     sorted_probs = [probabilities[x] for x in sorted_counts_indices]
-    #     sorted_classes = [classes[x] for x in sorted_counts_indices]
-    #     sorted_label_counts = [label_counts[x] for x in sorted_counts_indices]
-    #     ax1.plot(sorted_probs)  # plot the probability thresholds line
-    #     nticks = range(n_classes)
-    #
-    #     # the next few lines plot the fiscal year data as bar plots and changes the color for each.
-    #     ax2.bar(nticks, sorted_label_counts, width=2, alpha=0.2, color='orange')
-    #     ax2.grid(b=False)  # turn off grid #2
-    #     ax1.set_title(title + clf)
-    #     ax1.set_ylabel(ax1_ylabel)
-    #     ax2.set_ylabel('Label Counts')
-    #     # Set the x-axis labels to be more meaningful than just some random dates.
-    #     ax1.axes.set_xticklabels(sorted_classes, rotation='vertical', fontsize=4)
-    #     ax1.set_xlabel('Labels')
-    #     # Tweak spacing to prevent clipping of ylabel
-    #     fig.tight_layout()
-    #     plt.savefig(out_name[:-4] + suffix)
-    #     plt.show()
+
 
 # test = pd.read_excel("../../data/lcf.xlsx")
 #
