@@ -38,14 +38,6 @@ def fake_test_data(sample_size=20, stringy=False):
     return y1, y2, y
 
 
-def check_types_match():
-    """
-    Test that the two system's guesses, and the 'true' values, are all of the same data type
-    :return:
-    """
-    return 0
-
-
 def right_pad():
     """
     Utility to right pad with zeros str-types, poss remove, not needed outside of SIC SOC project
@@ -63,6 +55,13 @@ def join_results(y1, y2, y, on_index=False):
     :param on_index: bool, whether to join using series indexes or just assume ordered
     :return: pandas.DataFrame containing columns for each input series
     """
+    # Check the types are the same
+    y1_types = [type(x) for x in y1]
+    y2_types = [type(x) for x in y2]
+    y_types = [type(x) for x in y]
+
+    if not y1_types == y2_types == y_types:
+        raise Exception("The types of the predictions and the true values are not all the same!")
 
     if on_index:
         df = pd.concat([y1, y2, y], axis=1)
@@ -118,9 +117,6 @@ y1, y2, y = fake_test_data(100, stringy=True)
 df = compare_systems_by_class(y1, y2, y)
 
 print(df)
-print(df[['y1_correct', 'y1_recall', 'support']])
-print(df[['both_correct', 'both_recall', 'support']])
-
 
 # from os import path
 # from sklearn import metrics as met
