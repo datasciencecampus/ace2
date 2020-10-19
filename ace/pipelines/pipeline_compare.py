@@ -6,15 +6,15 @@ from os import path, makedirs
 from sklearn.metrics import classification_report
 
 
-def configure_pipeline(experiment_path, ml_file_path, comparison_ml_file_path, pad_char, pad_len, matched_only):
+def configure_pipeline(experiment_path, ml_file_path, comparison_ml_file_path=None,
+                       pad_char=None, pad_len=None, matched_only=None):
     """
-    :param experiment_path:
-    :param ml_file_path:
-    :param comparison_ml_file_path:
-    :param pad_char:
-    :param pad_len:
-    :param matched_only:
-    :return:
+    :param experiment_path: Directory in which to create the 'qa' folder and config file
+    :param ml_file_path: The classification results to be summarised by class
+    :param comparison_ml_file_path: An alternative set of classification results to be compared to
+    :param pad_char: If right-padding class labels, what to pad them with
+    :param pad_len: If right-padding class labels, what length to pad them to
+    :param matched_only: Whether to drop below-threshold results or mark them as 'unclassified' (-1)
     """
     base_path = path.join(experiment_path, 'qa')
     config_path = path.join(base_path, 'config.json')
@@ -34,37 +34,6 @@ def configure_pipeline(experiment_path, ml_file_path, comparison_ml_file_path, p
 
     with open(config_path, 'w') as fp:
         json.dump(d, fp)
-
-
-def fake_results(sample_size=20, stringy=False):
-    """
-    Should've had this in my PhD...
-
-    Create dataframes simulating two Machine Learning system's predictions including whether each sample has been
-    filtered ('matched'), according to some probability threshold.
-
-    :param sample_size: Number of samples to fake
-    :param stringy: Whether it should be string or int
-    :return: df, other_df: pandas DataFrames containing results in same format expected from pipeline_ml
-    """
-    import random
-
-    def one_set(sample_size, stringy):
-        return np.asarray(["C" + str(random.randint(0, 3)) if(stringy)
-                           else random.randint(0, 5)
-                           for x in range(sample_size)])
-
-    df = pd.DataFrame({"true_label": one_set(sample_size, stringy),
-                       "prediction_labels": one_set(sample_size, stringy),
-                       "matched": [np.random.choice([0, 1], p=[0.1, 0.9]) for x in range(sample_size)]})
-
-    df.index = [x for x in range(sample_size)]
-
-    other_df = df[['true_label']].copy()
-    other_df['prediction_labels'] = one_set(sample_size, stringy)
-    other_df['matched'] = [np.random.choice([0, 1], p=[0.1, 0.9]) for x in range(sample_size)]
-
-    return df, other_df
 
 
 def join_results(y1, y2, y_true, on_index=False):
@@ -190,12 +159,12 @@ class PipelineCompare:
     def prep_ml_table(self, df):
         """
         Some standard cleaning up for output predictions/validation files from the ml_pipeline
-        :param df: predictions DataFrame with columns true_label, prediction_labels, and matched if intending to subset
-        to records that passed the thresholding.
+        :param df: predictions DataFrame with columns 'true_label', 'prediction_labels', and 'matched' if intending to
+        re-class results that fall below thresholds to 'unclassified' (-1)
         :return: two series for true and predicted values.  Returned as series to preserve index.
         """
         if self._matched_only:
-            df = df[df['matched'] == 1]
+            df['true_label'] = np.where(df['matched'], df['true_label'], -1)
 
         if self._pad_char:
             y_true = df['true_label'].apply(self.expanded_right_pad)
@@ -224,34 +193,15 @@ class PipelineCompare:
 
         class_df = by_class_results(y_true, y_pred)
 
-        class_df.to_csv(path.join(self._output_dir, "by_class_results.csv"))
+        class_df.sort_values("support", ascending=False)\
+                .to_csv(path.join(self._output_dir, "by_class_results.csv"))
 
         if self._comparison_ml_file_path:
             other_df = pd.read_csv(self._comparison_ml_file_path)
             y_true_other, y_pred_other = self.prep_ml_table(other_df)
             compare_df = by_class_compare(y_pred, y_pred_other, y_true, on_index=True)
 
-            compare_df.to_csv(path.join(self._output_dir, "ml_system_comparison.csv"))
+            compare_df.sort_values("support", ascending=False)\
+                      .to_csv(path.join(self._output_dir, "ml_system_comparison.csv"))
 
         return None
-
-
-# Temp scripting while I get this show on the road
-df, other_df = fake_results(200, stringy=True)
-
-print(df)
-print(other_df)
-
-df.to_csv("experiment/ml1.csv", index=True)
-other_df.to_csv("experiment/ml2.csv", index=True)
-
-configure_pipeline(experiment_path="experiment",
-                   ml_file_path="experiment/ml1.csv",
-                   comparison_ml_file_path="experiment/ml2.csv",
-                   pad_char="0",
-                   pad_len=4,
-                   matched_only=False)
-
-PC = PipelineCompare("experiment")
-
-PC.create_qa_outputs()
