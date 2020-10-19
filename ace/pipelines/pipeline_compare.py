@@ -16,6 +16,8 @@ import pandas as pd
 import matplotlib.pylab as plt
 import seaborn as sns
 
+from sklearn.metrics import classification_report
+
 
 def fake_test_data(sample_size=20, stringy=False):
     """
@@ -38,61 +40,67 @@ def fake_test_data(sample_size=20, stringy=False):
     return y1, y2, y
 
 
-def right_pad():
-    """
-    Utility to right pad with zeros str-types, poss remove, not needed outside of SIC SOC project
-    :return:
-    """
+def expanded_right_pad(x, pad_len=4, pad_char="0"):
+    # Do the padding
+    padded = np.array([str(entry).ljust(pad_len, pad_char) for entry in x])
+    # Fix the fail codes
+    padded = np.where(padded == "-100", "-1", padded)
+    padded = np.where(padded == "-600", "-6", padded)
+    return padded
 
 
-def join_results(y1, y2, y, on_index=False):
+def join_results(y1, y2, y_true, on_index=False):
     """
     Take three iterables (pandas series, array, list), join to create a pandas DataFrame.
     If on_index, join using index values (assumed to indicate source Sample).
     :param y1: predicted classes for series of samples from system 1
     :param y2: predicted classes for series of samples from system 2
-    :param y: true classes of series of samples
+    :param y_true: true classes of series of samples
     :param on_index: bool, whether to join using series indexes or just assume ordered
     :return: pandas.DataFrame containing columns for each input series
     """
     # Check the types are the same
     y1_types = [type(x) for x in y1]
     y2_types = [type(x) for x in y2]
-    y_types = [type(x) for x in y]
+    y_true_types = [type(x) for x in y_true]
 
-    if not y1_types == y2_types == y_types:
+    if not y1_types == y2_types == y_true_types:
         raise Exception("The types of the predictions and the true values are not all the same!")
 
     if on_index:
-        df = pd.concat([y1, y2, y], axis=1)
-        df.columns = ["y1", "y2", "y"]
+        df = pd.concat([y1, y2, y_true], axis=1)
+        df.columns = ["y1", "y2", "y_true"]
     else:
         df = pd.DataFrame({"y1": y1,
                            "y2": y2,
-                           "y": y})
+                           "y_true": y_true})
     return df
 
 
-def compare_systems_by_class(y1, y2, y, on_index=False):
+def by_class_compare(y1, y2, y_true, on_index=False):
     """
     Compares by-class performance of two ML systems, including their overlap
     :param y1: predicted classes for series of samples from system 1
     :param y2: predicted classes for series of samples from system 2
-    :param y: true classes of series of samples
+    :param y_true: true classes of series of samples
     :return: pandas.DataFrame containing results of the comparison
     """
-    df = join_results(y1, y2, y, on_index)
+    df = join_results(y1, y2, y_true, on_index)
 
     # All the bool!  These by-Sample comparisons form the base of the various aggregations
-    df['y1_correct'] = df['y1'] == df['y']
-    df['y2_correct'] = df['y2'] == df['y']
+    df['y1_correct'] = df['y1'] == df['y_true']
+    df['y2_correct'] = df['y2'] == df['y_true']
     df['both_correct'] = df['y1_correct'] & df['y2_correct']
     df['either_correct'] = df['y1_correct'] | df['y2_correct']
     df['one_correct'] = (df['either_correct'] == True) & (df['both_correct'] == False)
 
+    # Pick out those only one system got correct
+    df['ONLY_y1_correct'] = (df['y1'] == df['y_true']) & (df['y2'] != df['y_true'])
+    df['ONLY_y2_correct'] = (df['y2'] == df['y_true']) & (df['y1'] != df['y_true'])
+
     # Aggregate by class
     df['support'] = 1
-    overlap_df = df.groupby("y") \
+    overlap_df = df.groupby("y_true") \
         .agg({"y1_correct": "sum",
               "y2_correct": "sum",
               "both_correct": "sum",
@@ -111,10 +119,29 @@ def compare_systems_by_class(y1, y2, y, on_index=False):
     return overlap_df
 
 
-# Temp scripting while I get this show on the road
-y1, y2, y = fake_test_data(100, stringy=True)
+def by_class_results(y_true, y_pred):
+    """
+    Report classification performance by class.
+    :param y_true: True labels
+    :param y_pred: Predicted labels
+    :return: pandas DataFrame of performance by class
+    """
+    report = classification_report(y_true, y_pred, output_dict=True, zero_division=0)
 
-df = compare_systems_by_class(y1, y2, y)
+    results = pd.DataFrame(report).transpose().reset_index()
+    results.rename(columns={'index': 'class'}, inplace=True)
+    results = results[~results.code.isin(['accuracy', 'macro avg', 'weighted avg'])]
+    return results
+
+
+def evaluate_ml_by_class(file_path, matched_only):
+
+
+
+# Temp scripting while I get this show on the road
+y1, y2, y_true = fake_test_data(100, stringy=True)
+
+df = by_class_compare(y1, y2, y_true)
 
 print(df)
 
@@ -128,37 +155,56 @@ print(df)
 #
 # from scripts.qa_results import qa_results_by_class, join_compare_systems
 #
-# def configure_pipeline(experiment_path, data_path, alg_type, multi=True, dirname='soc',
-#                   data_filename='training_data.pkl.bz2',
-#                   train_test_ratio=0.75, threshold=0.5, accuracy=0.9):
-#     base_path = path.join(experiment_path, 'features')
-#     config_path = path.join(base_path,  'config.json')
-#     pipe_path = path.join(base_path, 'pipe')
-#     d={
-#
-#         'alg_type':alg_type,
-#         'multi': multi,
-#         'dirname': dirname,
-#         'data_filename':data_filename,
-#         'train_test_ratio':train_test_ratio,
-#         'threshold': threshold,
-#         'accuracy':accuracy,
-#
-#
-#     }
-#     with open(config_path, 'w') as fp: json.dump(d, fp)
-#
-#
-# class PipelineCompare:
-#     def __init__(self, config_filename):
-#
-#         with open(config_filename, 'w') as fp:
-#             self.__config = json.load(fp)
-#
-#
-#     def fit(self, X, y):
-#         print()
-#
-#
-#     def transform(self, X, y):
-#         print()
+def configure_pipeline(experiment_path, data_path, alg_type, multi=True, dirname='soc'):
+    base_path = path.join(experiment_path, 'features')
+    config_path = path.join(base_path,  'config.json')
+    pipe_path = path.join(base_path, 'pipe')
+    d={
+
+        'alg_type':alg_type,
+        'multi': multi,
+        'dirname': dirname,
+        'data_filename':data_filename,
+        'train_test_ratio':train_test_ratio,
+        'threshold': threshold,
+        'accuracy':accuracy,
+
+
+    }
+    with open(config_path, 'w') as fp: json.dump(d, fp)
+
+
+class PipelineCompare:
+    def __init__(self, config_filename):
+
+        with open(config_filename, 'w') as fp:
+            self.__config = json.load(fp)
+
+        self._ml_file_path = self.__config('ml_file_path')
+
+        # If the pad options are specified, then do so.
+        self._pad_char = self.__config.get("pad_char", None)
+        self._pad_len = self.__config.get("pad_len", None)
+
+    def validate_class_stats(self, ml_df=None, matched_only=False):
+        """
+        Creates a classification report showing the results per class of the ml coding tool
+        """
+
+        # If no df provided, assume we're loading one saved elsewhere
+        if not ml_df:
+            ml_df = pd.read_csv(self._ml_file_path, index_col=0)
+
+        # If only examining those that passed a threshold limit, drop the rest
+        if matched_only:
+            ml_df = ml_df[ml_df['matched'] == 1]
+
+        if self._pad_char & self._pad_len:
+            y_true = expanded_right_pad(ml_df['true_label'], pad_char=self._pad_char, pad_len=self._pad_len)
+            y_pred = expanded_right_pad(ml_df['prediction_labels'], pad_char=self._pad_char, pad_len=self._pad_len)
+
+        else:
+            y_true = ml_df['true_labels']
+            y_pred = ml_df['prediction_labels']
+
+        return by_class_results(y_true, y_pred)
