@@ -20,7 +20,6 @@ def configure_pipeline(experiment_path,  multi=True, dirname='soc', data_filenam
     config_path = path.join(base_path,  'config.json')
     out_path = path.join(base_path, 'out')
     d={
-
         'multi': multi,
         'dirname': dirname,
         'base_path': base_path,
@@ -80,7 +79,6 @@ class MLDeploy(BaseEstimator, TransformerMixin):
             if self.__classification_mask[idx]:
                 score += pred==y
         matched_acuracy = score/sum(self.__classification_mask)
-
 
 
         n_unclassifiable = sum([x == False for x in self.__classification_mask])

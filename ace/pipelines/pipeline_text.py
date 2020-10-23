@@ -52,16 +52,13 @@ import pandas as pd
 
 from ace.utils.utils import create_load_balance_hist, check_and_create
 
-# TODO lowercase as pipeline step before stem lemma
-import nltk
-nltk.download('stopwords')
-
 
 def configure_pipeline(experiment_path, data_path, spell=True, split_words=True, text_headers=['RECDESC'], stop_words=True,
                        lemmatize=False, stemm=False):
     base_path = path.join(experiment_path, 'text')
     config_path = path.join(base_path, 'config.json')
     pipe_path = path.join(base_path, 'pipe')
+    lang_path = path.join(base_path, 'lang')
     d={
         'spell': spell,
         'split_words': split_words,
@@ -70,11 +67,13 @@ def configure_pipeline(experiment_path, data_path, spell=True, split_words=True,
         'pipe_path': pipe_path,
         'data_path': data_path,
         'base_path': base_path,
+        'lang_path': lang_path,
         'text_pipeline_pickle_name': 'text_pipeline.pickle',
         'text_headers': text_headers,
         'stop_words':stop_words
     }
     check_and_create(base_path)
+    check_and_create(lang_path)
     with open(config_path, mode='w+') as fp:
         json.dump(d, fp)
 
@@ -189,7 +188,7 @@ class SplitWords(BaseEstimator, TransformerMixin):
     
     def fit(self, X, y=None):
         dtime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        self.__lang_filepath = path.join(f'my_lang_{dtime}.txt.gz')
+
         df = pd.DataFrame({'words' :[self.__keep_correctly_spelled(token, self.spell_) for token in X]})
         word_count = dict(Counter(" ".join(df['words']).split(" "))) 
         word_count_df = pd.DataFrame.from_dict(word_count, orient='index').reset_index()
@@ -202,13 +201,14 @@ class SplitWords(BaseEstimator, TransformerMixin):
 
         word_count_df = word_count_df.sort_values('n_appearances', ascending=False).reset_index(drop=True)
         word_count_df['words'] = word_count_df['words'].str.lower()
-        word_count_df['words'].to_csv(self.__lang_filepath,
+
+        lang_filepath = path.join(config_test['lang_path'], f'my_lang_{dtime}.txt.gz')
+        word_count_df['words'].to_csv(lang_filepath,
                                       index=None,
                                       header=False,
                                       compression='gzip',
                                       encoding='utf-8')
-
-        self.language_model_ = wordninja.LanguageModel(self.__lang_filepath)
+        self.language_model_ = wordninja.LanguageModel(lang_filepath)
 
         return self
         
@@ -237,12 +237,13 @@ class PipelineText:
 
         base_path = path.join(experiment_path, 'text')
         config_path = path.join(base_path, 'config.json')
-
+        global config_test
         with open(config_path, 'r') as fp:
             self.__config = json.load(fp)
 
         self.__pipeline_steps = []
         self.__pipe = None
+        config_test = self.__config
 
 
     def extend_pipe(self, steps):
@@ -283,7 +284,7 @@ class PipelineText:
 
         for header in self.__config['text_headers']:
             print("Fitting pipeline for " + header)
-            X_i = X[header]
+            X_i = X[header].astype(str)
             pipe.fit(X_i, y)
 
             print("Saving text pipeline")
@@ -306,13 +307,18 @@ class PipelineText:
             print("Loading text pipeline for " + header)
             pipe = joblib.load(text_pipeline_location)
             print("Transforming pipeline for " + header)
-            X_i = X[header]
-            X_list.append(pipe.transform(X=X_i))
+            X_i = X[header].astype(str)
+            new_text_list = pipe.transform(X=X_i)
+            df = pd.DataFrame(new_text_list, index=X[header].index,
+                              columns=[header])
+
+            X_list.append(df)
 
         file_name_base = self.__config['base_path']
         filename_pickle = path.join(file_name_base, 'text_features.pkl.bz2')
+        pkl_obj = X_list, y
         with bz2.BZ2File(filename_pickle, 'wb') as pickle_file:
-            pickle.dump(X, pickle_file, protocol=4, fix_imports=False)
+            pickle.dump(pkl_obj, pickle_file, protocol=4, fix_imports=False)
 
         return X_list
 
