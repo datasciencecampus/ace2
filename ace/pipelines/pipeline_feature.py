@@ -16,17 +16,19 @@ from ace.factories.embeddings_factory import EmbeddingsFactory
 from ace.factories.feature_selection_factory import FeatureSelectionFactory
 from scipy.sparse import csr_matrix
 from sklearn.pipeline import Pipeline
+import numpy as np
 
 
-def configure_pipeline(experiment_path, data_path, feature_set=['frequency_matrix'], num_features=0, idf=True,
+def configure_pipeline(experiment_path,  feature_set=['frequency_matrix'], num_features=0, idf=True,
                        feature_selection_type='Logistic', min_df=3, min_ngram=1, max_ngram=3):
     base_path = path.join(experiment_path, 'features')
     config_path = path.join(base_path, 'config.json')
     pipe_path = path.join(base_path, 'pipe')
+    data_path = path.join(experiment_path, 'text', 'text_features.pkl.bz2')
     d = {
         'feature_set': feature_set,
         'num_features': num_features,
-        'max_df': 0.4,
+        'max_df': 0.3,
         'idf': idf,
         'feature_selection_type': feature_selection_type,
         'min_df': min_df,
@@ -51,6 +53,7 @@ def configure_pipeline(experiment_path, data_path, feature_set=['frequency_matri
     print()
 
 
+
 class PipelineFeatures:
     def __init__(self, experiment_path):
         base_path = path.join(experiment_path, 'features')
@@ -73,12 +76,13 @@ class PipelineFeatures:
         #     self.__add_embeddings_features_mean(self.__text, 'glove_mean_300d', idf_dict=self.__idf_dict)
 
         self.__pipe = None
+        self.__n_features=0
 
     def extend_pipe(self, steps):
 
         self.__pipeline_steps.extend(steps)
 
-    def fit_transform(self, text, y):
+    def fit_transform(self, text=None, y=None):
         self.fit(text, y)
         self.transform(text, y)
 
@@ -88,7 +92,7 @@ class PipelineFeatures:
         """
 
         if X is None:
-            Χ, y = pd.read_pickle(self.__config('data_path'))
+            X, y = pd.read_pickle(self.__config['data_path'])
 
         print("Assembling base feature pipeline")
         # Term Frequency!
@@ -102,8 +106,8 @@ class PipelineFeatures:
                      NMF(n_components=50, random_state=42, alpha=.1, l1_ratio=.5, init='nndsvd') if self.__config[
                          'nmf'] else None)
         idf_tuple = ('IDF', TfidfTransformer() if self.__config['idf'] else None)
-        wc_tuple = ('WORD_COUNT', self.__add_wordcount_features(X_i) if self.__config['word_count'] else None)
-        pos_tuple = ('POS', self.__add_partsofspeech_features(X_i) if self.__config['pos'] else None)
+        wc_tuple = ('WORD_COUNT', None) # self.__add_wordcount_features(X_i) if self.__config['word_count'] else None)
+        pos_tuple = ('POS', None) # self.__add_partsofspeech_features(X_i) if self.__config['pos'] else None)
 
         pipeline_routines = [count_vectorizer_tuple, idf_tuple, feature_selection_model_tuple, nmf_tuple, wc_tuple,
                              pos_tuple]
@@ -112,23 +116,27 @@ class PipelineFeatures:
         pipe = Pipeline(self.__pipeline_steps)
 
         for X_i in X:
-
+            name = X_i.columns[0]
+            X_i = np.array(X_i.values.tolist()).ravel()
             print("Fitting pipeline!")
             pipe.fit(X_i, y)
 
             print("Saving features pipeline")
-            features_pipeline_location = path.join(self.__config['pipe_path'], self.__config['feature_pipeline_pickle_name']+'.'+ X_i.name)
+            features_pipeline_location = path.join(self.__config['pipe_path'], self.__config['feature_pipeline_pickle_name']+'.'+ name)
             ut.check_and_create(self.__config['pipe_path'])
             joblib.dump(pipe, features_pipeline_location, compress=3)
 
     def transform(self, X=None, y=None):
 
         if X is None:
-            X, y = pd.read_pickle(self.__config('data_path'))
+            X, y = pd.read_pickle(self.__config['data_path'])
         X_list = []
         for X_i in X:
+            name = X_i.columns[0]
+            X_i = np.array(X_i.values.tolist()).ravel()
+
             features_pipeline_location = path.join(self.__config['pipe_path'],
-                                                   self.__config['feature_pipeline_pickle_name']+'.'+ X_i.name)
+                                                   self.__config['feature_pipeline_pickle_name']+'.'+ name)
 
             print("Loading feature pipeline")
             pipe = joblib.load(features_pipeline_location)
@@ -143,10 +151,11 @@ class PipelineFeatures:
         X_0 = X_list[0]
         for X_i in X_list[1:]:
             X_0 = scipy.sparse.hstack([X_0, X_i])
-
+        self.cache_features(X_0,y, '')
+        self.__n_features=X_0.shape[0]
         return X_0
 
-    def cache_features(self, X, suffix):
+    def cache_features(self, X, y,suffix):
 
         file_name = '_xy_' + suffix
 
@@ -154,8 +163,8 @@ class PipelineFeatures:
         filename_pickle = path.join(file_name_base, file_name + '.pkl.bz2')
 
         with bz2.BZ2File(filename_pickle, 'wb') as pickle_file:
-            pickle.dump(X, pickle_file, protocol=4, fix_imports=False)
-        self.__generate_report()
+            pickle.dump((X,y), pickle_file, protocol=4, fix_imports=False)
+        self.__generate_report(suffix)
 
     def extend_features(self, Xin, feature_columnsIn):
         for feature_columnIn in feature_columnsIn:
@@ -178,11 +187,11 @@ class PipelineFeatures:
     def __calculate_word_count(self, docs):
         return [len(str(x).split()) for x in docs]
 
-    def __add_wordcount_features(self, text):
-        x_count = self.__calculate_word_count(text)
-        self.__num_word_count = len(x_count)
-        self.__X = self.__add_feature_to_sparcemat(self.__X, x_count)
-        self.__X = self.__X.tocsr()
+    # def __add_wordcount_features(self, text):
+    #     x_count = self.__calculate_word_count(text)
+    #     self.__num_word_count = len(x_count)
+    #     self.__X = self.__add_feature_to_sparcemat(self.__X, x_count)
+    #     self.__X = self.__X.tocsr()
 
     def __add_embeddings_features_mean(self, text, model_type, idf_dict=None):
         print('calculating word vector representations: ' + model_type + ' | idf: ' + str(idf_dict is not None))
