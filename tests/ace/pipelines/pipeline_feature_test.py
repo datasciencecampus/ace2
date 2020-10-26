@@ -36,18 +36,18 @@ class PipelineFeatureTest(unittest.TestCase):
     def test_features_dims(self):
         configure_pipeline(self.__experiment_dir, 'data', min_df=1)
         feature_pipe = PipelineFeatures(self.__experiment_dir)
-        feature_pipe.fit([self.__text['text1']], self.__text['label'])
-        X=feature_pipe.transform([self.__text['text1']], self.__text['label'])
+        feature_pipe.fit([self.__text[['text1']]], self.__text['label'])
+        X=feature_pipe.transform([self.__text[['text1']]], self.__text['label'])
         n_rows = X.shape[0]
         n_cols=X.shape[1]
 
         self.assertEqual(n_rows, 10)
         self.assertEqual(n_cols, 66)
 
-    def test_features_dims_two_text_olumns(self):
+    def test_features_dims_two_text_columns(self):
         configure_pipeline(self.__experiment_dir, 'data', min_df=1)
         feature_pipe = PipelineFeatures(self.__experiment_dir)
-        X_text=[self.__text['text1'], self.__text['text2']]
+        X_text=[self.__text[['text1']], self.__text[['text2']]]
         feature_pipe.fit(X_text, self.__text['label'])
         X=feature_pipe.transform(X_text, self.__text['label'])
         n_rows = X.shape[0]
