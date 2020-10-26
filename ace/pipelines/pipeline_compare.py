@@ -5,8 +5,10 @@ import pandas as pd
 from os import path, makedirs
 from sklearn.metrics import classification_report
 
+pd.options.mode.chained_assignment = None  # default='warn'
 
-def configure_pipeline(experiment_path, ml_file_path, comparison_ml_file_path=None,
+
+def configure_pipeline(experiment_path, ml_file_path=None, comparison_ml_file_path=None,
                        pad_char=None, pad_len=None, matched_only=None):
     """
     :param experiment_path: Directory in which to create the 'qa' folder and config file
@@ -93,7 +95,8 @@ def by_class_compare(y1, y2, y_true, on_index=False):
               "y2_correct": "sum",
               "both_correct": "sum",
               "either_correct": "sum",
-              "one_correct": "sum",
+              "ONLY_y1_correct": "sum",
+              "ONLY_y2_correct": "sum",
               "support": "count"}) \
         .reset_index()
 
@@ -104,7 +107,26 @@ def by_class_compare(y1, y2, y_true, on_index=False):
         if "correct" in col:
             overlap_df[str(col).replace("correct", "recall")] = 100.0 * overlap_df[col] / overlap_df['support']
 
+    overlap_df = overlap_df.rename(columns={"y_true": "label"})
     return overlap_df
+
+
+def vs_headlines(overlap_df, top_n=5, bottom_n=5):
+    """
+    Utility for creating a tidy by-class comparison table for top and bottom most populous classes
+    :param overlap_df: output of by_class_compare
+    :return: a much neater, printable dataframe
+    """
+    recall_columns = [col for col in overlap_df.columns if "recall" in col]
+    columns = ["label", "support"] + recall_columns
+    overlap_df = overlap_df[columns]
+
+    for col in recall_columns:
+        overlap_df[col] = overlap_df[col].round(2)
+
+    overlap_df = overlap_df.sort_values("support", ascending=False)
+
+    return overlap_df.head(top_n).append(overlap_df.tail(bottom_n), ignore_index=True)
 
 
 def by_class_results(y_true, y_pred):
@@ -127,9 +149,6 @@ class PipelineCompare:
 
         base_path = path.join(experiment_path, 'qa')
         config_path = path.join(base_path, 'config.json')
-
-        if not path.exists(base_path):
-            makedirs(base_path)
 
         with open(config_path, 'r') as fp:
             self.__config = json.load(fp)
@@ -171,7 +190,7 @@ class PipelineCompare:
             y_pred = df['prediction_labels'].apply(self.expanded_right_pad)
 
         else:
-            y_true = df['true_labels']
+            y_true = df['true_label']
             y_pred = df['prediction_labels']
 
         return y_true, y_pred
@@ -186,7 +205,7 @@ class PipelineCompare:
         """
 
         # If no df provided, assume we're loading one saved elsewhere
-        if not ml_df:
+        if ml_df is None:
             ml_df = pd.read_csv(self._ml_file_path, index_col=0)
 
         y_true, y_pred = self.prep_ml_table(ml_df)
@@ -203,5 +222,7 @@ class PipelineCompare:
 
             compare_df.sort_values("support", ascending=False)\
                       .to_csv(path.join(self._output_dir, "ml_system_comparison.csv"))
+
+            vs_headlines(compare_df).to_csv(path.join(self._output_dir, "ml_system_headlines.csv"))
 
         return None
