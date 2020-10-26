@@ -3,47 +3,47 @@ import joblib
 import matplotlib
 from sklearn.base import BaseEstimator, TransformerMixin
 
-matplotlib.use('Agg')
-import pandas as pd
-
 from os import path
-from sklearn.metrics import  accuracy_score
+from sklearn.metrics import accuracy_score
+
+import ace.utils.utils as ut
 
 matplotlib.use('Agg')
 
 
-def configure_pipeline(experiment_path,  multi=True, dirname='soc', data_filename='training_data.pkl.bz2',
-                  train_test_ratio=0.75,   validation_path=''):
+def configure_pipeline(experiment_path, classifier_name, validation_path='', threshold=0.5):
 
     base_path = path.join(experiment_path, 'deploy')
-    features_path = path.join(experiment_path, 'features')
     config_path = path.join(base_path,  'config.json')
-    out_path = path.join(base_path, 'out')
+    ml_path = path.join(experiment_path, 'ml')
     d={
-        'multi': multi,
-        'dirname': dirname,
         'base_path': base_path,
-        'features_path':features_path,
-        'data_filename':data_filename,
-        'train_test_ratio':train_test_ratio,
-        'validation_path':validation_path,
-        'out_path':out_path
+        'ml_path': ml_path,
+        'validation_path': validation_path,
+        'classifier_name': classifier_name,
+        'threshold': threshold
     }
+
+    ut.check_and_create(base_path)
     with open(config_path, 'w') as fp: json.dump(d, fp)
 
 
 class MLDeploy(BaseEstimator, TransformerMixin):
-    # TODO does this need stopwords? No, stop will be done as part of text processing
-    def __init__(self, config, classifier):
-        self.__classifier = classifier
-        self.__name = classifier.__class__.__name__
-        self.__pickle_path = path.join(config['base_path'], self.__name)
-        self.__validation_path = config['validation_path']
-        self.__threshold = config['threshold']
+    def __init__(self, experiment_path):
+
+        base_path = path.join(experiment_path, 'deploy')
+        config_path = path.join(base_path, 'config.json')
+
+        with open(config_path, 'r') as fp:
+            self.__config = json.load(fp)
+
+        self.__name = self.__config['classifier_name']
+        self.__pickle_path = path.join(self.__config['ml_path'], self.__name)
+        self.__validation_path = self.__config['validation_path']
+        self.__threshold = self.__config['threshold']
         self.__classes = []
         self.__classification_mask=[]
         self.__thresholds = joblib.load(self.__pickle_path+'_thresholds')
-        self.__config=config
 
     def fit(self, X=None, y=None):
         return self
@@ -99,5 +99,5 @@ class MLDeploy(BaseEstimator, TransformerMixin):
                 "matched accuracy: " + str(matched_accuracy) + "\n" +
                 "**************************************\n")
 
-        with open(path.join(self.__config['out_path'], 'report.txt'), "w") as f:
+        with open(path.join(self.__config['base_path'], 'report.txt'), "w") as f:
             f.write(write_output)
