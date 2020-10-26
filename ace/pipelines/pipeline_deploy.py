@@ -42,25 +42,33 @@ class MLDeploy(BaseEstimator, TransformerMixin):
         self.__threshold = config['threshold']
         self.__classes = []
         self.__classification_mask=[]
-        self.__thresholds = pd.read_pickle(self.__pickle_path+'_thresholds')
+        self.__thresholds = joblib.load(self.__pickle_path+'_thresholds')
         self.__config=config
 
     def fit(self, X=None, y=None):
         return self
 
-    def transform(self, X, y):
+    def transform(self, X=None, y=None):
 
         print("transforming data using: " + self.__name)
         classification_model = joblib.load(self.__pickle_path)
 
-        X_valid, y_valid = pd.read_pickle(self.__validation_path, '_xy.pkl.bz2')
+        if not X:
+            X_valid, y_valid = joblib.load(path.join(self.__validation_path, '_xy_.pkl.bz2'))
+        else:
+            X_valid = X
+            y_valid = y
+
         predictions = classification_model.predict(X_valid)
         probabilities = classification_model.predict_proba(X_valid)
+
         self.__segment(predictions, probabilities)
 
         if y_valid is not None:
-            self.__output(y_valid, predictions, probabilities)
+            self.__output(y_valid, predictions)
+            return y_valid, predictions, probabilities
 
+        return predictions, probabilities
 
     def __segment(self, predictions, probabilities):
         prediction_probs = probabilities.max(axis=1)
@@ -78,17 +86,17 @@ class MLDeploy(BaseEstimator, TransformerMixin):
         for idx, pred in enumerate(predictions):
             if self.__classification_mask[idx]:
                 score += pred==y
-        matched_acuracy = score/sum(self.__classification_mask)
-
+        matched_accuracy = score/sum(self.__classification_mask)
 
         n_unclassifiable = sum([x == False for x in self.__classification_mask])
+
         print("****************************************")
         write_output = (
                 "******* Topics Classifier ************" + "\n" +
                 "num validation data: " + str(len(predictions)) + "\n" +
                 "unclassified: " + str(n_unclassifiable) + "\n" +
                 "match-rate: " + str(1 - (n_unclassifiable / len(predictions))) + "\n" +
-                "matched accuracy: " + str(matched_acuracy) + "\n" +
+                "matched accuracy: " + str(matched_accuracy) + "\n" +
                 "**************************************\n")
 
         with open(path.join(self.__config['out_path'], 'report.txt'), "w") as f:

@@ -44,7 +44,6 @@ def configure_pipeline(experiment_path,  multi=True, train_test_ratio=0.75, thre
 
 
 class MLTrainTest():
-    # TODO does this need stopwords? No, stop will be done as part of text processing
     def __init__(self, experiment_path, classifier=None):
 
         base_path = path.join(experiment_path, 'ml')

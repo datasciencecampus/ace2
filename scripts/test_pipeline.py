@@ -5,8 +5,12 @@ from os import path
 import ace.pipelines.pipeline_text as pt
 import ace.pipelines.pipeline_feature as pf
 import ace.pipelines.pipeline_ml as pm
+import ace.pipelines.pipeline_deploy as dl
+import ace.pipelines.pipeline_compare as pc
+
 from ace.factories.ml_factory import MLFactory
 import pandas as pd
+
 
 pickle_file = path.join('data', 'processed', 'lcf.pkl.bz2')
 
@@ -19,21 +23,37 @@ pickle_file = path.join('data', 'processed', 'lcf.pkl.bz2')
 experiment_path='exp_1'
 data_path=path.join('data', 'processed', 'lcf.pkl.bz2')
 
-pt.configure_pipeline(experiment_path,data_path , spell=True, split_words=True, text_headers=['RECDESC', 'EXPDESC'],
-                      stop_words=True, lemmatize=False, stemm=False)
-
-pipe_text = pt.PipelineText('exp_1')
-pipe_text.fit_transform()
-
-
-pf.configure_pipeline(experiment_path, feature_set=['frequency_matrix'], num_features=0, idf=True,
-                       feature_selection_type='Logistic', min_df=3, min_ngram=1, max_ngram=3)
-
-pipe_features = pf.PipelineFeatures(experiment_path)
-pipe_features.fit_transform()
-
-pm.configure_pipeline(experiment_path)
+# pt.configure_pipeline(experiment_path,data_path , spell=True, split_words=True, text_headers=['RECDESC', 'EXPDESC'],
+#                       stop_words=True, lemmatize=False, stemm=False)
+#
+# pipe_text = pt.PipelineText('exp_1')
+# pipe_text.fit_transform()
+#
+#
+# pf.configure_pipeline(experiment_path, feature_set=['frequency_matrix'], num_features=0, idf=True,
+#                        feature_selection_type='Logistic', min_df=3, min_ngram=1, max_ngram=3)
+#
+# pipe_features = pf.PipelineFeatures(experiment_path)
+# pipe_features.fit_transform()
+#
+# pm.configure_pipeline(experiment_path)
 cls = MLFactory.factory('LogisticRegression')
+#
+# pipe_ml = pm.MLTrainTest(experiment_path,classifier=cls)
+# pipe_ml.fit_transform()
 
-pipe_ml = pm.MLTrainTest(experiment_path,classifier=cls)
-pipe_ml.fit_transform()
+fake_config = {"base_path": "exp_1/ml",
+               "validation_path": "exp_1/features",
+               "threshold": 0.5,
+               "out_path": "exp_1"}
+
+ml_dep = dl.MLDeploy(fake_config, cls)
+
+# By default, returns
+y_true, y_pred, y_prob = ml_dep.transform()
+
+print(y_true[:10], y_pred[:10])
+
+#pc.configure_pipeline(experiment_path)
+
+#pipe_pc = pc.PipelineCompare()
