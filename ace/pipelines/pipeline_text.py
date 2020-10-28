@@ -49,16 +49,17 @@ from sklearn.pipeline import Pipeline
 
 import pandas as pd
 
-from ace.utils.utils import create_load_balance_hist, check_and_create
+from ace.utils.utils import check_and_create, load_corrections
 
 
-def configure_pipeline(experiment_path, data_path, spell=True, split_words=True, text_headers=['RECDESC'], stop_words=True,
-                       lemmatize=False, stemm=False):
+def configure_pipeline(experiment_path, data_path, clean=True, spell=True, split_words=True, text_headers=['RECDESC'],
+                       stop_words=True, lemmatize=False, stemm=False):
     base_path = path.join(experiment_path, 'text')
     config_path = path.join(base_path, 'config.json')
     pipe_path = path.join(base_path, 'pipe')
     lang_path = path.join(base_path, 'lang')
     d={
+        'clean': clean,
         'spell': spell,
         'split_words': split_words,
         'lemmatize': lemmatize,
@@ -77,8 +78,36 @@ def configure_pipeline(experiment_path, data_path, spell=True, split_words=True,
         json.dump(d, fp)
 
 
+class PreCleaner(BaseEstimator, TransformerMixin):
+    """
+    Punctuation/accent removal, lower-case, manual corrections
+    I don't like relying on pandas for this but it's a hell of a lot faster.
+    """
+    def __init__(self, folder="correction_dicts"):
+
+        self._correction_dict = {}
+
+        # Load all corrections, compile into a single dict of pattern (key) and replacement (value)
+        for value in load_corrections(folder).values():
+            self._correction_dict.update(value)
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None):
+        print("Cleaning text")
+
+        # By far the most time consuming part of this is the bulk regex replacement of the manual corrections
+        return pd.Series(X).str.upper().\
+                                replace(self._correction_dict, regex=True).\
+                                apply(strip_accents_ascii).\
+                                replace(r"[^A-Z0-9 ]", " ", regex=True).\
+                                replace(r"\s+", " ", regex=True).\
+                                str.strip().\
+                                str.lower().values
+
+
 class LemmaTokenizer(BaseEstimator, TransformerMixin):
-    # TODO does this need stopwords? No, stop will be done as part of text processing
     def __init__(self):
         self.wnl = WordNetLemmatizer()
 
@@ -101,6 +130,7 @@ class LemmaTokenizer(BaseEstimator, TransformerMixin):
         print("Lemmatizing and tokenizing (wordnet)")
         return [[self.lemmatize_with_pos(t) for t in pos_tag(word_tokenize(doc))] for doc in X]
 
+
 class Lemmatizer(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.wnl = WordNetLemmatizer()
@@ -112,6 +142,7 @@ class Lemmatizer(BaseEstimator, TransformerMixin):
         print("Lemmatizing using wordnet")
         return [' '.join([self.wnl.lemmatize(t) for t in word_tokenize(doc)]) for doc in X]
 
+
 class Stemmer(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.ps = PorterStemmer()
@@ -122,6 +153,7 @@ class Stemmer(BaseEstimator, TransformerMixin):
     def transform(self, X=None, y=None):
         print("Stemming using porter stemmer")
         return [' '.join([self.ps.stem(t) for t in word_tokenize(doc)]) for doc in X]
+
 
 class StopWords(BaseEstimator, TransformerMixin):
     def __init__(self):
@@ -140,6 +172,7 @@ class StopWords(BaseEstimator, TransformerMixin):
         print("removing stopwords")
 
         return [' '.join([word for word in word_tokenize(doc) if word not in self.__stop_words]) for doc in X]
+
 
 class SpellCheckDoc(BaseEstimator, TransformerMixin):
     def __init__(self):
@@ -244,9 +277,7 @@ class PipelineText:
         self.__pipe = None
         config_test = self.__config
 
-
     def extend_pipe(self, steps):
-
         self.__pipeline_steps.extend(steps)
 
     def fit_transform(self, X=None, y=None):
@@ -262,10 +293,10 @@ class PipelineText:
         """
         Combines preprocessing steps into a pipeline object
         """
+        pipeline_steps = []
 
-
-        pipeline_steps=[]
-
+        if self.__config['clean']:
+            pipeline_steps.append(("clean", PreCleaner()))
         if self.__config['spell']:
             pipeline_steps.append(('spell', SpellCheckDoc()))
         if self.__config['split_words']:
@@ -320,20 +351,3 @@ class PipelineText:
             pickle.dump(pkl_obj, pickle_file, protocol=4, fix_imports=False)
 
         return X_list
-
-
-
-# test = pd.read_excel("../../data/lcf.xlsx")
-#
-# test['single_text'] = test['RECDESC'].astype(str) + " " + test['EXPDESC'].astype(str)
-#
-# with bz2.BZ2File("../../data/proto_dat.pkl.bz2", 'wb') as pickle_file:
-#
-#     pkl_obj = [list(test['single_text']), list(test['EFSCODE'])]
-#     pickle.dump(pkl_obj, pickle_file, protocol=4, fix_imports=False)
-#
-# configure_pipeline(data_path='../../data/proto_dat.pkl.bz2', experiment_path=path.join('outputs', 'soc'))
-# pt = PipelineText(config_path=path.join('outputs', 'soc', 'text'))
-# test = pt.fit_transform()
-#
-# print(test)
