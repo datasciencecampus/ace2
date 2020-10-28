@@ -1,0 +1,1 @@
+{"spell": true, "split_words": true, "lemmatize": false, "stemm": false, "pipe_path": "exp_1/text/pipe", "data_path": "data/processed/lcf.pkl.bz2", "base_path": "exp_1/text", "lang_path": "exp_1/text/lang", "text_pipeline_pickle_name": "text_pipeline.pickle", "text_headers": ["RECDESC", "EXPDESC"], "stop_words": true}
