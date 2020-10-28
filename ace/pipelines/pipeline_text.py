@@ -46,7 +46,6 @@ from sklearn.feature_extraction.text import strip_accents_ascii
 from sklearn.base import BaseEstimator, TransformerMixin
 from spellchecker import SpellChecker
 from sklearn.pipeline import Pipeline
-from matplotlib import pyplot as plt
 
 import pandas as pd
 
