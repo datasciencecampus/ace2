@@ -10,12 +10,11 @@ import os
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from spellchecker import SpellChecker
 
-from data_access import DataLoader
-from ace.factories import data_factory as factory
+from scripts.data_access import DataLoader
 from ace.utils import utils
 from ace.utils.ace_exception import AceException
+
 
 def get_args(command_line_arguments):
     parser = argparse.ArgumentParser(description="an app to ingest data from various datafile formats and create a "
@@ -49,6 +48,7 @@ def get_args(command_line_arguments):
 
     return args
 
+
 def plot_histogram(labels_hist, classes, dir_name, num_red_classes, title='load_balance'):
     """
     For reporting the load balancing of the data.
@@ -71,6 +71,7 @@ def plot_histogram(labels_hist, classes, dir_name, num_red_classes, title='load_
 
     plt.savefig(path.join(dir_name, title))
 
+
 def main(supplied_args):
     args = get_args(supplied_args)
     label_header = args.label_header
@@ -84,7 +85,7 @@ def main(supplied_args):
     filepath = path.join(args.data_path, args.code, filename)
 
     # pick desired features, then drop nas
-    df = DataLoader(code=args.code, spark=utils.spark(), lim=args.limit, dataset_type=args.run_type, balanced=args.balanced).df #[[args.text_header, args.label_header]]
+    df = DataLoader(code=args.code, spark=utils.spark(), lim=args.limit, dataset_type=args.run_type, balanced=args.balanced).df
     num_all = df.shape[0]
     print("Size: " + str(num_all))
     df = df.dropna(subset=[label_header, args.text_header])
@@ -144,9 +145,9 @@ def main(supplied_args):
             df.loc[df[label_header] == '', label_header] = '-1'
             
     print(str(df[label_header].nunique()) + ' classes remaining after cleaning')
-    
-    
+
     hist = utils.create_load_balance_hist(df[args.label_header])
+
     plot_histogram(hist, list(set(df[label_header])), dirname, 0, 'after_load_balance')
     
     # smaller sample if specified by fraction, happens with replacement
@@ -185,6 +186,7 @@ def main(supplied_args):
     filename_out = path.join(dirname, 'report.txt')
     with open(filename_out, "w") as f:
         f.write(output_text)
+
 
 if __name__ == '__main__':
     try:

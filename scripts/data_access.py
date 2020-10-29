@@ -6,11 +6,8 @@ import pickle
 import string
 from datetime import datetime
 
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd 
 from pyspark.sql import functions as F
-from pyspark.sql import SparkSession
 from pyspark.sql import Window
 
 from ace.utils.file_paths import get_file_path
@@ -81,7 +78,6 @@ class DataLoader:
         else:
             # census data large enough to assume smaller classes will not need to be filtered out as above
             # only select full census data where the code can be found in the training data
-            # TODO: not sure this is the ideal process
             filtered_df = self.df.filter(F.col(col_name).isin(code_list))
             n_classes = filtered_df.select(F.countDistinct(col_name).alias('n_classes')).collect()[0]['n_classes']
             size_of_classes = int(size_of_validation/n_classes)
@@ -112,85 +108,17 @@ class DataLoader:
         else: 
             raise ValueError("Code is not recongised. Please use either 'sic' or 'soc'")
         
-        #get value counts of each class
+        # get value counts of each class
         classes = pd.DataFrame(self.df[col_name].value_counts()).reset_index()
         
-        #set column names
+        # set column names
         classes.columns = [col_name,'Count']
         
-        #filter classes with instances > class_size
+        # filter classes with instances > class_size
         classes = classes[classes["Count"] > min_class_size]
         sample_classes = classes[col_name].unique()
         
-        #filter dataframe so only classess with a sample greater than class size are included
+        # filter dataframe so only classess with a sample greater than class size are included
         sample_df = self.df[self.df[col_name].isin(sample_classes)]
         
         return sample_df    
-
-      
-def compare_codes(code, full_df, df): 
-    '''
-    Compare codes from full census data with 1pc sample
-    
-    code: 'sic' or 'soc'
-        
-    '''
-    #Define column names of full and sample codes based on input code
-    if code == "soc": 
-        col_name_full = "occupation_code"
-        col_name_sample = "SOC2020_code"
-    elif code == "sic": 
-        col_name_full = "industry_code"
-        col_name_sample = "industry_code"
-    else: 
-        raise ValueError("Code is not recognised. Please use either 'sic' or 'soc")
-
-    # Check to ensure codes in all codes in census are in 1pc sample
-    codes_in_1pc = list(df[col_name_sample].unique())
-    codes_in_full = [i[col_name_full] for i in full_df.select(col_name_full).distinct().collect()]
-
-    # Remove None items and punctuation to compare lists
-    for x in [codes_in_full, codes_in_1pc]:
-        if None in x:
-            x.remove(None)
-
-    codes_in_full = [''.join(c for c in s if c not in string.punctuation) for s in codes_in_full]
-
-    # Compare length of lists
-    if set(codes_in_full) != set(codes_in_1pc): 
-        print("Difference in the codes in the full and the sample data")
-
-        # Compare items in lists
-        full_not_1pc_codes = np.setdiff1d(codes_in_full,codes_in_1pc)
-        print("The different codes are: ")
-        print(full_not_1pc_codes)
-    else: 
-        print("Number of codes in full data and sample data are equal")
-    return codes_in_1pc, df.columns
-
-  
-def check_classes(df_training, df_validation, df_balanced_validation, code): 
-    '''
-        Function to check that all classes in the validation and balanced validation datasets can be found in the training data
-    
-    '''
-    
-    if code == "sic": 
-        col_name = "industry_code"
-    elif code == "soc": 
-        col_name = "SOC2020_code"
-    else: 
-        raise ValueError("Code is not recognised. Please use either sic or soc")
-    
-    unique_classes_training = df_training[col_name].unique()
-    unique_classes_validation = df_validation[col_name].unique()
-    unique_classes_balanced_validation = df_balanced_validation[col_name].unique()
-    
-    bool_classes_validation = bool(set(unique_classes_validation) - set(unique_classes_training))
-    bool_classes_validation_balanced = bool(set(unique_classes_balanced_validation) - set(unique_classes_training))
-    
-    if bool_classes_validation: 
-        raise ValueError("There are classes in validation dataset that are not in the training data")
-    if  bool_classes_validation_balanced:
-        raise ValueError("There are classes in validation balanced dataset that are not in the training data")                 
-    

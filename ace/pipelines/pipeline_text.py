@@ -83,7 +83,7 @@ class PreCleaner(BaseEstimator, TransformerMixin):
     Punctuation/accent removal, lower-case, manual corrections
     I don't like relying on pandas for this but it's a hell of a lot faster.
     """
-    def __init__(self, folder="correction_dicts"):
+    def __init__(self, folder="lookup_files/correction_dicts"):
 
         self._correction_dict = {}
 
@@ -160,7 +160,7 @@ class StopWords(BaseEstimator, TransformerMixin):
 
         self.__stop_words = stopwords.words('english')
 
-        with open(os.path.join('config', 'stopwords.txt')) as f:
+        with open(os.path.join('lookup_files', 'stopwords.txt')) as f:
             extra_stop_words = f.read().splitlines()
         # Read from text file ad config
         self.__stop_words.extend(extra_stop_words)

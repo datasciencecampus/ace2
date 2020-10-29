@@ -1,28 +1,42 @@
 import argparse
-import string
 import sys
 import time
 import warnings
-from datetime import datetime
 
-import numpy as np
-import pandas as pd
-from pyspark.sql import functions as F
-
-from scripts.data_access import DataLoader, check_classes, compare_codes
+from scripts.data_access import DataLoader
 from ace.utils.file_paths import get_file_path
 from ace.factories.data_factory import save_data_to_hdfs
 from ace.utils.ace_exception import AceException
-from ace.utils.utils import spark
+
+from pyspark.sql import SparkSession
+
+
+def spark():
+    """ Use to get reference to spark session. """
+    return (SparkSession.builder.appName("mltool")
+            .config("spark.executor.memory", "40g")
+            .config("spark.executor.cores", 3)
+            .config("spark.dynamicAllocation.maxExecutors", 40)
+            .config("spark.dynamicAllocation.enabled", "true")
+            .config("spark.shuffle.service.enabled", "true")
+            .config("spark.shuffle.is.maxRetries", 10)
+            .config("spark.sql.execution.arrow.maxRecordsPerBatch", 5000)
+            .config("spark.kryoserializer.buffer.max", "256m")
+            .config("spark.cleaner.referenceTracking.cleanCheckpoints", "true")
+            .config("spark.ui.showConsoleProgress", "false")
+            .getOrCreate())
+
 
 warnings.warn(
     "If you try to run this script and save the data, you will receive an error as the filepath already exists. You are unable to overwrite data already saved in Hue"
 )
 
+
 # Large enough for validation, whilst not removing too much from the training data
-# More data is taken for sic for validation as the data has come from the census data, although the quality of the data is poorer, we are able to take more of it
-# TODO: we are temporarily NOT taking SIC data from the full census data, and have reduced the sample size to 10000 from 20000
-random_state=42
+# More data is taken for sic for validation as the data has come from the census data,
+# although the quality of the data is poorer, we are able to take more of it
+random_state = 42
+
 config = {
     'soc': {
         'sample_size' : 20000,
@@ -72,7 +86,74 @@ def test_access(code, spark):
             raise ValueError(f"Error in loading {filepath}")
             
     print("All dataframes loaded successfully")
-    
+
+
+def compare_codes(code, full_df, df):
+    '''
+    Compare codes from full census data with 1pc sample
+    code: 'sic' or 'soc'
+    '''
+    # Define column names of full and sample codes based on input code
+    if code == "soc":
+        col_name_full = "occupation_code"
+        col_name_sample = "SOC2020_code"
+    elif code == "sic":
+        col_name_full = "industry_code"
+        col_name_sample = "industry_code"
+    else:
+        raise ValueError("Code is not recognised. Please use either 'sic' or 'soc")
+
+    # Check to ensure codes in all codes in census are in 1pc sample
+    codes_in_1pc = list(df[col_name_sample].unique())
+    codes_in_full = [i[col_name_full] for i in full_df.select(col_name_full).distinct().collect()]
+
+    # Remove None items and punctuation to compare lists
+    for x in [codes_in_full, codes_in_1pc]:
+        if None in x:
+            x.remove(None)
+
+    codes_in_full = [''.join(c for c in s if c not in string.punctuation) for s in codes_in_full]
+
+    # Compare length of lists
+    if set(codes_in_full) != set(codes_in_1pc):
+        print("Difference in the codes in the full and the sample data")
+
+        # Compare items in lists
+        full_not_1pc_codes = np.setdiff1d(codes_in_full, codes_in_1pc)
+        print("The different codes are: ")
+        print(full_not_1pc_codes)
+
+    else:
+        print("Number of codes in full data and sample data are equal")
+    return codes_in_1pc, df.columns
+
+
+def check_classes(df_training, df_validation, df_balanced_validation, code):
+    '''
+        Function to check that all classes in the validation and balanced validation datasets can be found in the training data
+
+    '''
+
+    if code == "sic":
+        col_name = "industry_code"
+    elif code == "soc":
+        col_name = "SOC2020_code"
+    else:
+        raise ValueError("Code is not recognised. Please use either sic or soc")
+
+    unique_classes_training = df_training[col_name].unique()
+    unique_classes_validation = df_validation[col_name].unique()
+    unique_classes_balanced_validation = df_balanced_validation[col_name].unique()
+
+    bool_classes_validation = bool(set(unique_classes_validation) - set(unique_classes_training))
+    bool_classes_validation_balanced = bool(set(unique_classes_balanced_validation) - set(unique_classes_training))
+
+    if bool_classes_validation:
+        raise ValueError("There are classes in validation dataset that are not in the training data")
+    if bool_classes_validation_balanced:
+        raise ValueError("There are classes in validation balanced dataset that are not in the training data")
+
+
 def check(training, validation, balanced_validation, id_col, code):
     if list(set(training[id_col]) & set(validation[id_col]) & set(balanced_validation[id_col])):
         print("There is overlap in dataframes")
@@ -83,6 +164,7 @@ def check(training, validation, balanced_validation, id_col, code):
     for k,v in run_type.items():    
         print("The length of " + code + " " + k + " dataframe is " + str(len(v)))
 
+
 def create_datasets(code, spark):
     """
     Creates a training, validation and balanced validation set
@@ -92,8 +174,8 @@ def create_datasets(code, spark):
     title_header = config[code]['title_header']
     id_col = config[code]['id_col']
     
-    dl = DataLoader(code=code,spark=spark, sample=True, lim=None)
-    dl_full = DataLoader(code=code,spark=spark, sample=False, lim=None)
+    dl = DataLoader(code=code, spark=spark, sample=True, lim=None)
+    dl_full = DataLoader(code=code, spark=spark, sample=False, lim=None)
           
     if code == 'sic':
         additional_header = 'employer_text'
@@ -106,7 +188,7 @@ def create_datasets(code, spark):
         df_to_be_sampled = dl_full.df.sample(False,census_sample_fraction,seed=random_state)
         code_list=[i[label_header] for i in df_to_be_sampled.select(label_header).distinct().collect()]
        
-    # census data large enough to assume smaller classes will not need to be filtered out as in 1% EA subsample
+        # census data large enough to assume smaller classes will not need to be filtered out as in 1% EA subsample
         balanced_validation = dl_full.balance_validation(
                 size_of_validation = balanced_sample_size, 
                 code_list=code_list
@@ -161,10 +243,10 @@ def main(supplied_args):
     spark_session = spark()
     args = get_args(supplied_args)
     
-    if (args.code !='both') & (args.code in ['sic','soc']):
+    if (args.code !='both') & (args.code in ['sic', 'soc']):
         code_list = [args.code]
     elif args.code == 'both':
-        code_list = ['sic','soc']
+        code_list = ['sic', 'soc']
     else:
         raise AceException(f'Unrecognised code argument {args.code}')
     print(f'Creating training, validation and balanced validation datasets for {code_list}')
@@ -173,9 +255,9 @@ def main(supplied_args):
         
         check_classes(training, validation, balanced_validation, code = code)
         
-        save_file(training, code=code,dataset_type='training',spark_session=spark_session)
-        save_file(validation, code=code,dataset_type='validation',spark_session=spark_session)
-        save_file(balanced_validation, code=code,dataset_type='validation', spark_session=spark_session, balanced=True)
+        save_file(training, code=code, dataset_type='training', spark_session=spark_session)
+        save_file(validation, code=code, dataset_type='validation', spark_session=spark_session)
+        save_file(balanced_validation, code=code, dataset_type='validation', spark_session=spark_session, balanced=True)
         
         test_access(code, spark_session)
     print(f'Created datasets for {code_list}')
