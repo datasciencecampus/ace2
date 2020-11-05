@@ -65,7 +65,7 @@ rf_ml_df.to_csv(path.join(experiment_path, "rf_predictions.csv"))
 # --- RUN the comparison of these results --- #
 pc.configure_pipeline(experiment_path,
                       ml_file_path=path.join(experiment_path, "lr_predictions.csv"),
-                      comparison_ml_file_path=path.join(experiment_path, "lr_predictions.csv"))
+                      comparison_ml_file_path=path.join(experiment_path, "rf_predictions.csv"))
 
 pipe_pc = pc.PipelineCompare(experiment_path)
 
