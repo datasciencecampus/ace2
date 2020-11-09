@@ -29,7 +29,7 @@ def configure_pipeline(experiment_path, classifier_name, validation_path='', thr
 
 
 class MLDeploy(BaseEstimator, TransformerMixin):
-    def __init__(self, experiment_path):
+    def __init__(self, experiment_path, data_name):
 
         base_path = path.join(experiment_path, 'deploy')
         config_path = path.join(base_path, 'config.json')
@@ -44,6 +44,7 @@ class MLDeploy(BaseEstimator, TransformerMixin):
         self.__classes = []
         self.__classification_mask=[]
         self.__thresholds = joblib.load(self.__pickle_path+'_thresholds')
+        self.__data_name = data_name
 
     def fit(self, X=None, y=None):
         return self
@@ -54,7 +55,7 @@ class MLDeploy(BaseEstimator, TransformerMixin):
         classification_model = joblib.load(self.__pickle_path)
 
         if not X:
-            X_valid, y_valid = joblib.load(path.join(self.__validation_path, '_xy_.pkl.bz2'))
+            X_valid, y_valid = joblib.load(path.join(self.__validation_path, '_xy_'+self.__data_name))
         else:
             X_valid = X
             y_valid = y
