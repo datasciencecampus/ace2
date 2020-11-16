@@ -33,21 +33,15 @@ import string
 import re
 
 import joblib
-import wordninja
 
-from collections import Counter
-from datetime import datetime
-from os import path
-
-from nltk import word_tokenize, PorterStemmer, pos_tag
-from nltk.corpus import wordnet, stopwords
-from nltk.stem import WordNetLemmatizer
-from sklearn.feature_extraction.text import strip_accents_ascii
-from sklearn.base import BaseEstimator, TransformerMixin
-from spellchecker import SpellChecker
-from sklearn.pipeline import Pipeline
-
+import numpy as np
 import pandas as pd
+
+from os import path
+from collections import Counter
+
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import Pipeline
 
 from ace.utils.utils import create_load_balance_hist, check_and_create
 
@@ -71,26 +65,34 @@ def configure_pipeline(experiment_path, data_path, drop_nans=True, load_balance_
         json.dump(d, fp)
 
 
-
 class DropNans(BaseEstimator, TransformerMixin):
 
     def fit(self, X=None, y=None):
         return self
 
     def transform(self, X=None, y=None):
-        return self
+
+        mask = (X == np.nan) | (y == np.nan)
+        return X[mask], y[mask]
+
 
 class DropClasses(BaseEstimator, TransformerMixin):
-    def __init__(self, minimum=0, maximum=0):
-        self.__min=minimum
-        self.__max=maximum
-
+    def __init__(self, minimum=0, maximum=np.inf):
+        self.__min = minimum
+        self.__max = maximum
 
     def fit(self, X=None, y=None):
         return self
 
     def transform(self, X=None, y=None):
-        return self
+
+        # Find the labels we wish to keep
+        counts = Counter(y)
+        keep_labels = [i for i in counts.keys() if (counts[i] >= self.__min) & (counts[i] <= self.__max)]
+
+        mask = np.array([True if(label in keep_labels) else False for label in y])
+
+        return X[mask], y[mask]
 
 
 class LoadBalance(BaseEstimator, TransformerMixin):
@@ -104,15 +106,55 @@ class LoadBalance(BaseEstimator, TransformerMixin):
         return self
 
 
-class KeepHeaders(BaseEstimator, TransformerMixin):
-    def __init__(self, headers=[]):
-        self.__headers=headers
+class LoadBalance(BaseEstimator, TransformerMixin):
+    """
+    Handles rebalancing of dataset through subsampling
+    """
+    def __init__(self,
+                 min_class_support=0,
+                 random_state=42):
+
+        self._class_list = None
+        self._min_class_support = min_class_support
+        self._random_state = random_state
+
+    def fit_transform(self, X=None, y=None):
+        self.fit(X, y)
+        return self.transform(X, y)
 
     def fit(self, X=None, y=None):
+        # Determine number from each class to be sampled
+        dynamic_limit = int(len(y) / len(pd.unique(y)))
+        self._min_class_support = np.max([dynamic_limit, self._min_class_support])
+
+        # Identify the classes that are populous enough in the fitted data to be downsampled
+        class_counts = pd.Series(y).value_counts()
+        self._class_list = list(class_counts[class_counts > (2 * self._min_class_support)].index)
+
         return self
 
     def transform(self, X=None, y=None):
-        return self
+        # If it's already a series, nothing will change.  This ensures there's an index for sample selection
+        ys = pd.Series(y)
+
+        # # Filter to classes that have 2 x minimum required support
+        # subsets = []
+        # for label in pd.unique(ys):
+        #     if label in self._class_list:
+        #         subset = ys[ys == label].sample(self._min_class_support, random_state=self._random_state)
+        #         subsets.append(subset)
+        #     else:
+        #         subsets.append(ys[ys == label])
+
+        # Get the indices of (randomly selected) sub-sample
+        selection_index = ys.groupby(ys) \
+            .sample(self._min_class_support, random_state=self._random_state) \
+            .index
+
+        # Convert to boolean mask so it can be used with other data
+        sample_mask = pd.Series(y).index.isin(selection_index)
+
+        return X[sample_mask], y[sample_mask]
 
 
 class PlotData(BaseEstimator, TransformerMixin):
@@ -122,7 +164,7 @@ class PlotData(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X=None, y=None):
-        print("removing stopwords")
+        print("Not removing stopwords")
 
         return self
 
@@ -160,14 +202,12 @@ class PipelineData:
         """
 
         pipeline_steps = []
-        if self.__config['keep_headers']:
-            pipeline_steps.append(('keep_headers', KeepHeaders(headers=self.__config['keep_headers'])))
         if self.__config['drop_nans']:
             pipeline_steps.append(('drop_nans', DropNans()))
         if self.__config['drop_classes_less_than']:
             pipeline_steps.append(('drop_classes_less_than', DropClasses(minimum=self.__config['drop_classes_less_than'])))
         if self.__config['drop_classes_more_than']:
-            pipeline_steps.append(('drop_classes_more_than', DropClasses(minimum=self.__config['drop_classes_more_than'])))
+            pipeline_steps.append(('drop_classes_more_than', DropClasses(maximum=self.__config['drop_classes_more_than'])))
         if self.__config['load_balance_ratio']:
             pipeline_steps.append(('load_balance_ratio', LoadBalance(ratio=self.__config['load_balance_ratio'])))
         if self.__config['plot_classes']:
@@ -177,11 +217,8 @@ class PipelineData:
 
         self.__pipe = Pipeline(self.__pipeline_steps)
 
-        for header in self.__config['text_headers']:
-            print("Fitting pipeline for " + header)
-            X_i = X[header].astype(str)
-            self.__pipe.fit(X_i, y)
-
+        print("Fitting data pipeline")
+        self.__pipe.fit(X, y)
 
     def transform(self, X=None, y=None):
 
@@ -189,8 +226,10 @@ class PipelineData:
             with bz2.BZ2File(self.__config['data_path'], 'rb') as pickle_file:
                 X, y = pickle.load(pickle_file)
 
+        # May as well do the subsetting here
+        if self.__config['keep_headers']:
+            X = X[self.__config['keep_headers']]
 
-        self.__pipe.transform()
-
-        return X
+        print("Transforming data pipeline")
+        return self.__pipe.transform(X, y)
 
