@@ -52,8 +52,8 @@ import pandas as pd
 from ace.utils.utils import create_load_balance_hist, check_and_create
 
 
-def configure_pipeline(experiment_path, data_path, spell=True, split_words=True, text_headers=['RECDESC'], stop_words=True,
-                       lemmatize=False, stemm=False):
+def configure_pipeline(experiment_path, data_path, spell=True, split_words=True, text_headers=['RECDESC', 'EXPDESC'],
+                       stop_words=True, lemmatize=False, stemm=False):
     base_path = path.join(experiment_path, 'text')
     config_path = path.join(base_path, 'config.json')
     pipe_path = path.join(base_path, 'pipe')
@@ -232,7 +232,7 @@ class SplitWords(BaseEstimator, TransformerMixin):
 
 
 class PipelineText:
-    def __init__(self, experiment_path):
+    def __init__(self, experiment_path, data_filename):
 
         base_path = path.join(experiment_path, 'text')
         config_path = path.join(base_path, 'config.json')
@@ -243,6 +243,7 @@ class PipelineText:
         self.__pipeline_steps = []
         self.__pipe = None
         config_test = self.__config
+        self.__data_file_name = data_filename
 
 
     def extend_pipe(self, steps):
@@ -256,7 +257,8 @@ class PipelineText:
     def fit(self, X=None, y=None):
 
         if X is None:
-            with bz2.BZ2File(self.__config['data_path'], 'rb') as pickle_file:
+            data_path = path.join(self.__config['data_path'], self.__data_file_name)
+            with bz2.BZ2File(data_path, 'rb') as pickle_file:
                 X, y = pickle.load(pickle_file)
 
         """
@@ -295,7 +297,8 @@ class PipelineText:
     def transform(self, X=None, y=None):
 
         if X is None:
-            with bz2.BZ2File(self.__config['data_path'], 'rb') as pickle_file:
+            data_path = path.join(self.__config['data_path'], self.__data_file_name)
+            with bz2.BZ2File(data_path, 'rb') as pickle_file:
                 X, y = pickle.load(pickle_file)
 
         X_list=[]
@@ -314,7 +317,7 @@ class PipelineText:
             X_list.append(df)
 
         file_name_base = self.__config['base_path']
-        filename_pickle = path.join(file_name_base, 'text_features.pkl.bz2')
+        filename_pickle = path.join(file_name_base,  self.__data_file_name)
         pkl_obj = X_list, y
         with bz2.BZ2File(filename_pickle, 'wb') as pickle_file:
             pickle.dump(pkl_obj, pickle_file, protocol=4, fix_imports=False)
