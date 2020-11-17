@@ -46,11 +46,13 @@ from sklearn.pipeline import Pipeline
 from ace.utils.utils import create_load_balance_hist, check_and_create
 
 
-def configure_pipeline(experiment_path, data_path, drop_nans=True, load_balance_ratio=None, keep_headers=['RECDESC'],
-                       label_column='CHECKTHIS',
-                       plot_classes=False, drop_classes_less_than=0, drop_classes_more_than=None):
+def configure_pipeline(experiment_path, drop_nans=True, load_balance_ratio=None, keep_headers=['RECDESC'],
+                       label_column='CHECKTHIS', plot_classes=False, drop_classes_less_than=0,
+                       drop_classes_more_than=None):
+
     base_path = path.join(experiment_path, 'data')
     config_path = path.join(base_path, 'config.json')
+
     d = {
         'drop_nans': drop_nans,
         'load_balance_ratio': load_balance_ratio,
@@ -59,7 +61,6 @@ def configure_pipeline(experiment_path, data_path, drop_nans=True, load_balance_
         'keep_headers': keep_headers,
         'label_column': label_column,
         'plot_classes': plot_classes,
-        'data_path': data_path,
         'base_path': base_path
     }
     check_and_create(base_path)
@@ -166,7 +167,7 @@ class PlotData(BaseEstimator, TransformerMixin):
     def transform(self, X=None, y=None):
         print("Not removing stopwords")
 
-        return self
+        return X
 
 
 class KeepHeaders(BaseEstimator, TransformerMixin):
@@ -187,13 +188,14 @@ class PipelineData:
         base_path = path.join(experiment_path, 'data')
         config_path = path.join(base_path, 'config.json')
         global config_test
+
         with open(config_path, 'r') as fp:
             self.__config = json.load(fp)
 
+        self.__base_path = base_path
         self.__pipeline_steps = []
         self.__pipe = None
         config_test = self.__config
-        #self.__data_file_name = data_filename
 
     def extend_pipe(self, steps):
 
@@ -241,8 +243,33 @@ class PipelineData:
         self.__pipe.fit(X)
 
     def transform(self, X, y=None):
-
         print("Transforming data pipeline")
         X = self.__pipe.transform(X)
         return X.drop(self.__config['label_column'], axis=1), list(X[self.__config['label_column']])
 
+    def split_fit_transform_save(self, X, outfile_name='processed.pkl.bz2', split_valid=None):
+
+        if split_valid:
+            msk = np.random.rand(len(X)) > split_valid
+            train_X, train_y = self.fit_transform(X[msk])
+            valid_X, valid_y = self.transform(X[~msk])
+
+            train_obj = train_X, train_y
+            valid_obj = valid_X, valid_y
+
+            with bz2.BZ2File(path.join(self.__base_path, "train" + outfile_name), 'wb') as pickle_file:
+                pickle.dump(train_obj, pickle_file, protocol=4, fix_imports=False)
+
+            with bz2.BZ2File(path.join(self.__base_path, "valid" + outfile_name), 'wb') as pickle_file:
+                pickle.dump(valid_obj, pickle_file, protocol=4, fix_imports=False)
+
+            # Return train_X, train_y, valid_X, valid_y
+            return None
+
+        X, y = self.fit_transform(X)
+
+        with bz2.BZ2File(path.join(self.__base_path, outfile_name), 'wb') as pickle_file:
+            pkl_obj = X, y
+            pickle.dump(pkl_obj, pickle_file, protocol=4, fix_imports=False)
+
+        return None
