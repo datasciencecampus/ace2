@@ -56,6 +56,19 @@ class PipelineFeatureTest(unittest.TestCase):
         self.assertEqual(n_rows, 10)
         self.assertEqual(n_cols, 70)
 
+    def test_num_features(self):
+        configure_pipeline(self.__experiment_dir, 'data', min_df=1)
+        feature_pipe = PipelineFeatures(self.__experiment_dir)
+
+        self.assertEqual(n_features, 0)
+
+    def config_location(self):
+        configure_pipeline(self.__experiment_dir, 'data')
+        config_path = os.path.join(self.__experiment_dir, 'features', 'config.json')
+
+        self.assertEqual(config_path, '/tests/exp/features/config.json')
+
+
     @classmethod
     def tearDownClass(self):
         shutil.rmtree(self.__experiment_dir)
