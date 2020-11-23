@@ -39,7 +39,7 @@ class PipelineTextTest(unittest.TestCase):
 
     def test_features_dims(self):
         configure_pipeline(self.__experiment_dir, 'data', text_headers=['text1'])
-        pipe_text = PipelineText(self.__experiment_dir)
+        pipe_text = PipelineText(self.__experiment_dir, 'train.pkl.bz2')
         pipe_text.fit(self.__text, self.__text['label'])
         X = pipe_text.transform(self.__text, self.__text['label'])
         n_cols = len(X)
@@ -48,7 +48,7 @@ class PipelineTextTest(unittest.TestCase):
 
     def test_features_dims_two_text_columns(self):
         configure_pipeline(self.__experiment_dir, 'data', text_headers=['text1', 'text2'])
-        pipe_text = PipelineText(self.__experiment_dir)
+        pipe_text = PipelineText(self.__experiment_dir, 'train.pkl.bz2')
         pipe_text.fit(self.__text, self.__text['label'])
         X = pipe_text.transform(self.__text, self.__text['label'])
         n_cols = len(X)

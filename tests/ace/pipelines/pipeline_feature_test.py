@@ -35,7 +35,7 @@ class PipelineFeatureTest(unittest.TestCase):
 
     def test_features_dims(self):
         configure_pipeline(self.__experiment_dir, 'data', min_df=1)
-        feature_pipe = PipelineFeatures(self.__experiment_dir)
+        feature_pipe = PipelineFeatures(self.__experiment_dir, 'train.pkl.bz2')
         feature_pipe.fit([self.__text[['text1']]], self.__text['label'])
         X=feature_pipe.transform([self.__text[['text1']]], self.__text['label'])
         n_rows = X.shape[0]
@@ -46,7 +46,7 @@ class PipelineFeatureTest(unittest.TestCase):
 
     def test_features_dims_two_text_columns(self):
         configure_pipeline(self.__experiment_dir, 'data', min_df=1)
-        feature_pipe = PipelineFeatures(self.__experiment_dir)
+        feature_pipe = PipelineFeatures(self.__experiment_dir, 'train.pkl.bz2')
         X_text = [self.__text[['text1']], self.__text[['text2']]]
         feature_pipe.fit(X_text, self.__text['label'])
         X = feature_pipe.transform(X_text, self.__text['label'])
@@ -59,7 +59,7 @@ class PipelineFeatureTest(unittest.TestCase):
     def test_num_features(self):
         # TODO THIS TEST REDUNDANT
         configure_pipeline(self.__experiment_dir, 'data', min_df=1)
-        feature_pipe = PipelineFeatures(self.__experiment_dir)
+        feature_pipe = PipelineFeatures(self.__experiment_dir, 'train.pkl.bz2')
 
         X_text = [self.__text[['text1']], self.__text[['text2']]]
         feature_pipe.fit(X_text, self.__text['label'])
