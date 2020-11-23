@@ -31,29 +31,29 @@ class PipelineTextTest(unittest.TestCase):
                 'row_12': ["There's been many sunny days", 'A thing', 0.4, 114, "There 's been many sunny day"],
             })
 
-    # def test_config_file_non_empty(self):
-    #     configure_pipeline(self.__experiment_dir, 'data')
-    #     config_path=os.path.join(self.__experiment_dir, 'text', 'config.json')
-    #     filesize = os.path.getsize(config_path)
-    #     self.assertNotEqual(filesize,0)
-    #
-    # def test_features_dims(self):
-    #     configure_pipeline(self.__experiment_dir, 'data', text_headers=['text1'])
-    #     pipe_text = PipelineText(self.__experiment_dir)
-    #     pipe_text.fit(self.__text, self.__text['label'])
-    #     X=pipe_text.transform(self.__text, self.__text['label'])
-    #     n_cols=len(X)
-    #
-    #     self.assertEqual(n_cols, 1)
-    #
-    # def test_features_dims_two_text_columns(self):
-    #     configure_pipeline(self.__experiment_dir, 'data', text_headers=['text1', 'text2'])
-    #     pipe_text = PipelineText(self.__experiment_dir)
-    #     pipe_text.fit(self.__text, self.__text['label'])
-    #     X = pipe_text.transform(self.__text, self.__text['label'])
-    #     n_cols = len(X)
-    #
-    #     self.assertEqual(n_cols, 2)
+    def test_config_file_non_empty(self):
+        configure_pipeline(self.__experiment_dir, 'data')
+        config_path = os.path.join(self.__experiment_dir, 'text', 'config.json')
+        filesize = os.path.getsize(config_path)
+        self.assertNotEqual(filesize, 0)
+
+    def test_features_dims(self):
+        configure_pipeline(self.__experiment_dir, 'data', text_headers=['text1'])
+        pipe_text = PipelineText(self.__experiment_dir)
+        pipe_text.fit(self.__text, self.__text['label'])
+        X = pipe_text.transform(self.__text, self.__text['label'])
+        n_cols = len(X)
+
+        self.assertEqual(n_cols, 1)
+
+    def test_features_dims_two_text_columns(self):
+        configure_pipeline(self.__experiment_dir, 'data', text_headers=['text1', 'text2'])
+        pipe_text = PipelineText(self.__experiment_dir)
+        pipe_text.fit(self.__text, self.__text['label'])
+        X = pipe_text.transform(self.__text, self.__text['label'])
+        n_cols = len(X)
+
+        self.assertEqual(n_cols, 2)
 
     def test_clean(self):
         lemmy = Lemmatizer()
@@ -61,9 +61,6 @@ class PipelineTextTest(unittest.TestCase):
 
         # Convert expected values to list so data types match
         text_expected = list(self.__text['expected'])
-
-        print(text_cleaned)
-        print(text_expected)
 
         self.assertEqual(text_cleaned, text_expected)
 

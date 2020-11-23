@@ -31,7 +31,7 @@ class PipelineFeatureTest(unittest.TestCase):
         configure_pipeline(self.__experiment_dir, 'data')
         config_path=os.path.join(self.__experiment_dir, 'features', 'config.json')
         filesize = os.path.getsize(config_path)
-        self.assertNotEqual(filesize,0)
+        self.assertNotEqual(filesize, 0)
 
     def test_features_dims(self):
         configure_pipeline(self.__experiment_dir, 'data', min_df=1)
@@ -47,20 +47,25 @@ class PipelineFeatureTest(unittest.TestCase):
     def test_features_dims_two_text_columns(self):
         configure_pipeline(self.__experiment_dir, 'data', min_df=1)
         feature_pipe = PipelineFeatures(self.__experiment_dir)
-        X_text=[self.__text[['text1']], self.__text[['text2']]]
+        X_text = [self.__text[['text1']], self.__text[['text2']]]
         feature_pipe.fit(X_text, self.__text['label'])
-        X=feature_pipe.transform(X_text, self.__text['label'])
+        X = feature_pipe.transform(X_text, self.__text['label'])
         n_rows = X.shape[0]
-        n_cols=X.shape[1]
+        n_cols = X.shape[1]
 
         self.assertEqual(n_rows, 10)
         self.assertEqual(n_cols, 70)
 
     def test_num_features(self):
+        # TODO THIS TEST REDUNDANT
         configure_pipeline(self.__experiment_dir, 'data', min_df=1)
         feature_pipe = PipelineFeatures(self.__experiment_dir)
 
-        self.assertEqual(n_features, 0)
+        X_text = [self.__text[['text1']], self.__text[['text2']]]
+        feature_pipe.fit(X_text, self.__text['label'])
+        X = feature_pipe.transform(X_text, self.__text['label'])
+
+        self.assertEqual(X.shape[1], 70, 0)
 
     def config_location(self):
         configure_pipeline(self.__experiment_dir, 'data')
