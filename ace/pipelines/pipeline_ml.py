@@ -44,7 +44,7 @@ def configure_pipeline(experiment_path,  multi=True, train_test_ratio=0.75, thre
 
 
 class MLTrainTest():
-    def __init__(self, experiment_path, classifier=None):
+    def __init__(self, experiment_path, data_name,classifier=None):
 
         base_path = path.join(experiment_path, 'ml')
         config_path = path.join(base_path, 'config.json')
@@ -53,12 +53,11 @@ class MLTrainTest():
         with open(config_path, 'r') as fp:
             self.__config = json.load(fp)
 
-
         self.__classifier = classifier
         self.__name = classifier.__class__.__name__
         ratio = self.__config['train_test_ratio']
         self.__pickle_path = path.join(self.__config['base_path'], self.__name)
-        X, y = pd.read_pickle(path.join(self.__config['features_path'], '_xy_.pkl.bz2'))
+        X, y = pd.read_pickle(path.join(self.__config['features_path'], '_xy_' + data_name))
 
         self.__X_train, self.__X_test, self.__y_train, self.__y_test = train_test_split(X, y,
                                                                                         test_size=1.0 - ratio,

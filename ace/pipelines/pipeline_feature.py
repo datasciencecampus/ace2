@@ -24,7 +24,7 @@ def configure_pipeline(experiment_path,  feature_set=['frequency_matrix'], num_f
     base_path = path.join(experiment_path, 'features')
     config_path = path.join(base_path, 'config.json')
     pipe_path = path.join(base_path, 'pipe')
-    data_path = path.join(experiment_path, 'text', 'text_features.pkl.bz2')
+    data_path = path.join(experiment_path, 'text')
     d = {
         'feature_set': feature_set,
         'num_features': num_features,
@@ -55,7 +55,7 @@ def configure_pipeline(experiment_path,  feature_set=['frequency_matrix'], num_f
 
 
 class PipelineFeatures:
-    def __init__(self, experiment_path):
+    def __init__(self, experiment_path, data_name):
         base_path = path.join(experiment_path, 'features')
         config_path = path.join(base_path, 'config.json')
 
@@ -77,6 +77,7 @@ class PipelineFeatures:
 
         self.__pipe = None
         self.__n_features=0
+        self.__data_name=data_name
 
     def extend_pipe(self, steps):
 
@@ -92,7 +93,7 @@ class PipelineFeatures:
         """
 
         if X is None:
-            X, y = pd.read_pickle(self.__config['data_path'])
+            X, y = pd.read_pickle(path.join(self.__config['data_path'], self.__data_name))
 
         print("Assembling base feature pipeline")
         # Term Frequency!
@@ -129,7 +130,7 @@ class PipelineFeatures:
     def transform(self, X=None, y=None):
 
         if X is None:
-            X, y = pd.read_pickle(self.__config['data_path'])
+            X, y = pd.read_pickle(path.join(self.__config['data_path'], self.__data_name))
         X_list = []
         for X_i in X:
             name = X_i.columns[0]
@@ -151,7 +152,7 @@ class PipelineFeatures:
         X_0 = X_list[0]
         for X_i in X_list[1:]:
             X_0 = scipy.sparse.hstack([X_0, X_i])
-        self.cache_features(X_0,y, '')
+        self.cache_features(X_0,y, self.__data_name)
         self.__n_features=X_0.shape[0]
         return X_0
 
@@ -160,7 +161,7 @@ class PipelineFeatures:
         file_name = '_xy_' + suffix
 
         file_name_base = self.__config['base_path']
-        filename_pickle = path.join(file_name_base, file_name + '.pkl.bz2')
+        filename_pickle = path.join(file_name_base, file_name )
 
         with bz2.BZ2File(filename_pickle, 'wb') as pickle_file:
             pickle.dump((X,y), pickle_file, protocol=4, fix_imports=False)
