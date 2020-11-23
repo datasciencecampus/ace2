@@ -33,43 +33,39 @@ import string
 import re
 
 import joblib
-import wordninja
 
-from collections import Counter
-from datetime import datetime
-from os import path
-
-from nltk import word_tokenize, PorterStemmer, pos_tag
-from nltk.corpus import wordnet, stopwords
-from nltk.stem import WordNetLemmatizer
-from sklearn.feature_extraction.text import strip_accents_ascii
-from sklearn.base import BaseEstimator, TransformerMixin
-from spellchecker import SpellChecker
-from sklearn.pipeline import Pipeline
-
+import numpy as np
 import pandas as pd
+
+from os import path
+from collections import Counter
+
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import Pipeline
 
 from ace.utils.utils import create_load_balance_hist, check_and_create
 
 
-def configure_pipeline(experiment_path, data_path, drop_nans=True, load_balance_ratio=0.0, keep_headers=['RECDESC'],
-                       plot_classes=True, drop_classes_less_than=0, drop_classes_more_than=0):
+def configure_pipeline(experiment_path, drop_nans=True, load_balance_ratio=None, keep_headers=['RECDESC'],
+                       label_column='CHECKTHIS', plot_classes=False, drop_classes_less_than=0,
+                       drop_classes_more_than=None):
+
     base_path = path.join(experiment_path, 'data')
     config_path = path.join(base_path, 'config.json')
+
     d = {
         'drop_nans': drop_nans,
         'load_balance_ratio': load_balance_ratio,
         'drop_classes_less_than': drop_classes_less_than,
         'drop_classes_more_than': drop_classes_more_than,
         'keep_headers': keep_headers,
+        'label_column': label_column,
         'plot_classes': plot_classes,
-        'data_path': data_path,
         'base_path': base_path
     }
     check_and_create(base_path)
     with open(config_path, mode='w+') as fp:
-        json.dump(d, fp)
-
+        json.dump(d, fp, indent=4)
 
 
 class DropNans(BaseEstimator, TransformerMixin):
@@ -78,54 +74,112 @@ class DropNans(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X=None, y=None):
-        return self
+        return X.dropna()
+
 
 class DropClasses(BaseEstimator, TransformerMixin):
-    def __init__(self, minimum=0, maximum=0):
-        self.__min=minimum
-        self.__max=maximum
-
+    def __init__(self, label_col, minimum=0, maximum=np.inf):
+        self.__min = minimum
+        self.__max = maximum
+        self.__label_col = label_col
 
     def fit(self, X=None, y=None):
         return self
 
     def transform(self, X=None, y=None):
-        return self
+
+        # Find the labels we wish to keep
+        counts = Counter(X[self.__label_col])
+        keep_labels = [i for i in counts.keys() if (counts[i] >= self.__min) & (counts[i] <= self.__max)]
+
+        mask = np.array([True if(label in keep_labels) else False for label in X[self.__label_col]])
+
+        return X[mask]
 
 
 class LoadBalance(BaseEstimator, TransformerMixin):
-    def __init__(self, ratio=0.0):
-        self.__ratio
+    def __init__(self, ratio=1.0):
+        self.__ratio = ratio
 
     def fit(self, X=None, y=None):
         return self
 
     def transform(self, X=None, y=None):
-        return self
+        return X
 
 
-class KeepHeaders(BaseEstimator, TransformerMixin):
-    def __init__(self, headers=[]):
-        self.__headers=headers
-
-    def fit(self, X=None, y=None):
-        return self
-
-    def transform(self, X=None, y=None):
-        return self
+# class LoadBalance(BaseEstimator, TransformerMixin):
+#     """
+#     Handles rebalancing of dataset through subsampling
+#     """
+#     def __init__(self,
+#                  min_class_support=0,
+#                  random_state=42):
+#
+#         self._class_list = None
+#         self._min_class_support = min_class_support
+#         self._random_state = random_state
+#
+#     def fit_transform(self, X=None):
+#         self.fit(X, y)
+#         return self.transform(X, y)
+#
+#     def fit(self, X=None):
+#         # Determine number from each class to be sampled
+#         dynamic_limit = int(len(y) / len(pd.unique(y)))
+#         self._min_class_support = np.max([dynamic_limit, self._min_class_support])
+#
+#         # Identify the classes that are populous enough in the fitted data to be downsampled
+#         class_counts = pd.Series(y).value_counts()
+#         self._class_list = list(class_counts[class_counts > (2 * self._min_class_support)].index)
+#
+#         return self
+#
+#     def transform(self, X=None):
+#         # If it's already a series, nothing will change.  This ensures there's an index for sample selection
+#         ys = pd.Series(y)
+#
+#         # # Filter to classes that have 2 x minimum required support
+#         # subsets = []
+#         # for label in pd.unique(ys):
+#         #     if label in self._class_list:
+#         #         subset = ys[ys == label].sample(self._min_class_support, random_state=self._random_state)
+#         #         subsets.append(subset)
+#         #     else:
+#         #         subsets.append(ys[ys == label])
+#
+#         # Get the indices of (randomly selected) sub-sample
+#         selection_index = ys.groupby(ys) \
+#             .sample(self._min_class_support, random_state=self._random_state) \
+#             .index
+#
+#         # Convert to boolean mask so it can be used with other data
+#         sample_mask = pd.Series(y).index.isin(selection_index)
+#
+#         return X[sample_mask], y[sample_mask]
 
 
 class PlotData(BaseEstimator, TransformerMixin):
 
+    def fit(self, X=None, y=None):
+        return self
+
+    def transform(self, X=None, y=None):
+        print("Not removing stopwords")
+
+        return X
+
+
+class KeepHeaders(BaseEstimator, TransformerMixin):
+
+    def __init__(self, headers):
+        self.__headers = headers
 
     def fit(self, X=None, y=None):
         return self
 
     def transform(self, X=None, y=None):
-        print("removing stopwords")
-
-        return self
-
+        return X[self.__headers]
 
 
 class PipelineData:
@@ -134,9 +188,11 @@ class PipelineData:
         base_path = path.join(experiment_path, 'data')
         config_path = path.join(base_path, 'config.json')
         global config_test
+
         with open(config_path, 'r') as fp:
             self.__config = json.load(fp)
 
+        self.__base_path = base_path
         self.__pipeline_steps = []
         self.__pipe = None
         config_test = self.__config
@@ -145,52 +201,75 @@ class PipelineData:
 
         self.__pipeline_steps.extend(steps)
 
-    def fit_transform(self, X=None, y=None):
-        self.fit(X, y)
-        return self.transform(X, y)
+    def fit_transform(self, X):
+        self.fit(X)
+        return self.transform(X)
 
-    def fit(self, X=None, y=None):
-
-        if X is None:
-            with bz2.BZ2File(self.__config['data_path'], 'rb') as pickle_file:
-                X, y = pickle.load(pickle_file)
-
+    def fit(self, X, y=None):
         """
         Combines preprocessing steps into a pipeline object
         """
 
-        pipeline_steps = []
-        if self.__config['keep_headers']:
-            pipeline_steps.append(('keep_headers', KeepHeaders(headers=self.__config['keep_headers'])))
-        if self.__config['drop_nans']:
-            pipeline_steps.append(('drop_nans', DropNans()))
-        if self.__config['drop_classes_less_than']:
-            pipeline_steps.append(('drop_classes_less_than', DropClasses(minimum=self.__config['drop_classes_less_than'])))
-        if self.__config['drop_classes_more_than']:
-            pipeline_steps.append(('drop_classes_more_than', DropClasses(minimum=self.__config['drop_classes_more_than'])))
-        if self.__config['load_balance_ratio']:
-            pipeline_steps.append(('load_balance_ratio', LoadBalance(ratio=self.__config['load_balance_ratio'])))
-        if self.__config['plot_classes']:
-            pipeline_steps.append(('plot_classes', PlotData()))
+        # Empty old pipeline to avoid interesting errors after repeated calls
+        self.__pipeline_steps = []
 
-        self.__pipeline_steps.extend(pipeline_steps)
+        if self.__config['keep_headers']:
+            self.__pipeline_steps.append(('keep_headers',
+                                   KeepHeaders(headers=self.__config['keep_headers'] +
+                                                       [self.__config['label_column']])))
+
+        if self.__config['drop_nans']:
+            self.__pipeline_steps.append(('drop_nans', DropNans()))
+
+        if self.__config['drop_classes_less_than']:
+            self.__pipeline_steps.append(('drop_classes_less_than',
+                                   DropClasses(label_col=self.__config['label_column'],
+                                               minimum=self.__config['drop_classes_less_than'])))
+
+        if self.__config['drop_classes_more_than']:
+            self.__pipeline_steps.append(('drop_classes_more_than',
+                                   DropClasses(label_col=self.__config['label_column'],
+                                               maximum=self.__config['drop_classes_more_than'])))
+
+        if self.__config['load_balance_ratio']:
+            self.__pipeline_steps.append(('load_balance_ratio', LoadBalance(ratio=self.__config['load_balance_ratio'])))
+
+        if self.__config['plot_classes']:
+            self.__pipeline_steps.append(('plot_classes', PlotData()))
 
         self.__pipe = Pipeline(self.__pipeline_steps)
 
-        for header in self.__config['text_headers']:
-            print("Fitting pipeline for " + header)
-            X_i = X[header].astype(str)
-            self.__pipe.fit(X_i, y)
+        print("Fitting data pipeline")
+        self.__pipe.fit(X)
 
+    def transform(self, X, y=None):
+        print("Transforming data pipeline")
+        X = self.__pipe.transform(X)
+        return X.drop(self.__config['label_column'], axis=1), list(X[self.__config['label_column']])
 
-    def transform(self, X=None, y=None):
+    def split_fit_transform_save(self, X, outfile_name='processed.pkl.bz2', split_valid=None):
 
-        if X is None:
-            with bz2.BZ2File(self.__config['data_path'], 'rb') as pickle_file:
-                X, y = pickle.load(pickle_file)
+        if split_valid:
+            msk = np.random.rand(len(X)) > split_valid
+            train_X, train_y = self.fit_transform(X[msk])
+            valid_X, valid_y = self.transform(X[~msk])
 
+            train_obj = train_X, train_y
+            valid_obj = valid_X, valid_y
 
-        self.__pipe.transform()
+            with bz2.BZ2File(path.join(self.__base_path, "train" + outfile_name), 'wb') as pickle_file:
+                pickle.dump(train_obj, pickle_file, protocol=4, fix_imports=False)
 
-        return X
+            with bz2.BZ2File(path.join(self.__base_path, "valid" + outfile_name), 'wb') as pickle_file:
+                pickle.dump(valid_obj, pickle_file, protocol=4, fix_imports=False)
 
+            # Return train_X, train_y, valid_X, valid_y
+            return None
+
+        X, y = self.fit_transform(X)
+
+        with bz2.BZ2File(path.join(self.__base_path, outfile_name), 'wb') as pickle_file:
+            pkl_obj = X, y
+            pickle.dump(pkl_obj, pickle_file, protocol=4, fix_imports=False)
+
+        return None
