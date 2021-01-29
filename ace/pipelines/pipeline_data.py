@@ -108,57 +108,6 @@ class LoadBalance(BaseEstimator, TransformerMixin):
         return X
 
 
-# class LoadBalance(BaseEstimator, TransformerMixin):
-#     """
-#     Handles rebalancing of dataset through subsampling
-#     """
-#     def __init__(self,
-#                  min_class_support=0,
-#                  random_state=42):
-#
-#         self._class_list = None
-#         self._min_class_support = min_class_support
-#         self._random_state = random_state
-#
-#     def fit_transform(self, X=None):
-#         self.fit(X, y)
-#         return self.transform(X, y)
-#
-#     def fit(self, X=None):
-#         # Determine number from each class to be sampled
-#         dynamic_limit = int(len(y) / len(pd.unique(y)))
-#         self._min_class_support = np.max([dynamic_limit, self._min_class_support])
-#
-#         # Identify the classes that are populous enough in the fitted data to be downsampled
-#         class_counts = pd.Series(y).value_counts()
-#         self._class_list = list(class_counts[class_counts > (2 * self._min_class_support)].index)
-#
-#         return self
-#
-#     def transform(self, X=None):
-#         # If it's already a series, nothing will change.  This ensures there's an index for sample selection
-#         ys = pd.Series(y)
-#
-#         # # Filter to classes that have 2 x minimum required support
-#         # subsets = []
-#         # for label in pd.unique(ys):
-#         #     if label in self._class_list:
-#         #         subset = ys[ys == label].sample(self._min_class_support, random_state=self._random_state)
-#         #         subsets.append(subset)
-#         #     else:
-#         #         subsets.append(ys[ys == label])
-#
-#         # Get the indices of (randomly selected) sub-sample
-#         selection_index = ys.groupby(ys) \
-#             .sample(self._min_class_support, random_state=self._random_state) \
-#             .index
-#
-#         # Convert to boolean mask so it can be used with other data
-#         sample_mask = pd.Series(y).index.isin(selection_index)
-#
-#         return X[sample_mask], y[sample_mask]
-
-
 class PlotData(BaseEstimator, TransformerMixin):
 
     def fit(self, X=None, y=None):
