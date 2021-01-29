@@ -3,7 +3,7 @@
   "license": "The Open Government Licence (OGL) Version 3",
   "author": "Data Science Campus / Thanasis",
   "url": "https://github.com/datasciencecampus/ace",
-  "version": "1.0",
+  "version": "2.0",
   "email": "thanasis.anthopoulos@ons.gov.uk",
   "description": "A supervised document classification app",
   "keywords": "document, classification, machine learning, ai"

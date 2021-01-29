@@ -1,5 +1,3 @@
-import bz2
-import pickle
 from os import path
 
 import ace.pipelines.pipeline_text as pt
@@ -29,7 +27,7 @@ paddy.configure_pipeline(experiment_path=experiment_path,
                          drop_classes_less_than=10,
                          drop_classes_more_than=None)
 
-pl = paddy.PipelineData("exp_1")
+pl = paddy.PipelineData(experiment_path)
 
 # Option 1:  Fit and Transform as with sklearn (and handle splitting and saving files yourself
 test_X, test_y = pl.fit_transform(test)
@@ -40,7 +38,6 @@ print(len(test_y))
 
 # Option 2:  Have the module handle the whole process including splitting off validation set
 pl.split_fit_transform_save(test, outfile_name='.pkl.bz2', split_valid=0.15)
-
 
 classifier_name = 'LogisticRegression'
 
@@ -69,10 +66,10 @@ pipe_features = pf.PipelineFeatures('exp_1', 'valid.pkl.bz2')
 pipe_features.transform()
 
 
+# ---- MODEL 1 --- #
+
 pm.configure_pipeline(experiment_path)
 
-
-# ---- MODEL 1 --- #
 cls = MLFactory.factory(classifier_name)
 pipe_ml = pm.MLTrainTest(experiment_path, 'train.pkl.bz2', classifier=cls)
 pipe_ml.fit_transform()
@@ -106,7 +103,7 @@ pd.DataFrame({"true_label": y_true, "prediction_labels": y_pred, "probabilities"
 # --- Comparison of these results --- #
 pc.configure_pipeline(experiment_path,
                       ml_file_path=path.join(experiment_path, "lr_predictions.csv"),
-                      comparison_ml_file_path=path.join(experiment_path, "lr_predictions.csv"))
+                      comparison_ml_file_path=path.join(experiment_path, "rf_predictions.csv"))
 
 pipe_pc = pc.PipelineCompare(experiment_path)
 

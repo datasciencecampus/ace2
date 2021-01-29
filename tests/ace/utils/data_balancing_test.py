@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from ace.utils.data_balancing import DataBalancer
+from ace.utils.utils import DataBalancer
 
 
 def fake_unbalanced_data(sample_size=20, stringy=True, random_state=42):
