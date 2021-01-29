@@ -111,22 +111,30 @@ def by_class_compare(y1, y2, y_true, on_index=False):
     return overlap_df
 
 
-def vs_headlines(overlap_df, top_n=5, bottom_n=5):
+def vs_headlines(overlap_df, top_n=10):
     """
     Utility for creating a tidy by-class comparison table for top and bottom most populous classes
     :param overlap_df: output of by_class_compare
+    :param top_n: number of classes to output, largest support first
     :return: a much neater, printable dataframe
     """
     recall_columns = [col for col in overlap_df.columns if "recall" in col]
     columns = ["label", "support"] + recall_columns
     overlap_df = overlap_df[columns]
 
+    # Calculate a "total" row
+    total_row = {'label': "Total", 'support': sum(overlap_df['support'])}
+
+    # Get the totals, round the columns
+    for col in recall_columns:
+        total_row[col] = (sum(overlap_df[col] * overlap_df['support']) / total_row['support'])
+
     for col in recall_columns:
         overlap_df[col] = overlap_df[col].round(2)
 
-    overlap_df = overlap_df.sort_values("support", ascending=False)
-
-    return overlap_df.head(top_n).append(overlap_df.tail(bottom_n), ignore_index=True)
+    return overlap_df.sort_values("support", ascending=False)\
+                     .head(top_n)\
+                     .append(total_row, ignore_index=True)
 
 
 def by_class_results(y_true, y_pred):

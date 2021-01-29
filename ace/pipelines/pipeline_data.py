@@ -27,15 +27,9 @@ DAMAGE.
 """
 import bz2
 import json
-import os
 import pickle
-import string
-import re
-
-import joblib
 
 import numpy as np
-import pandas as pd
 
 from os import path
 from collections import Counter
@@ -43,7 +37,7 @@ from collections import Counter
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
 
-from ace.utils.utils import create_load_balance_hist, check_and_create
+from ace.utils.utils import check_and_create
 
 
 def configure_pipeline(experiment_path, drop_nans=True, load_balance_ratio=None, keep_headers=['RECDESC'],

@@ -29,7 +29,7 @@ paddy.configure_pipeline(experiment_path=experiment_path,
 
 pl = paddy.PipelineData(experiment_path)
 
-# Option 1:  Fit and Transform as with sklearn (and handle splitting and saving files yourself
+# Option 1:  Fit and Transform as with sklearn (and handle splitting and saving files yourself)
 test_X, test_y = pl.fit_transform(test)
 
 print(test.shape)

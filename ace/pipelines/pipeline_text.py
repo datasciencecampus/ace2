@@ -80,26 +80,16 @@ def configure_pipeline(experiment_path, data_path, clean=True, spell=True, split
 
 class PreCleaner(BaseEstimator, TransformerMixin):
     """
-    Punctuation/accent removal, lower-case, manual corrections
+    Punctuation/accent removal, lower-case
     I don't like relying on pandas for this but it's a hell of a lot faster.
     """
-    def __init__(self, folder="lookup_files/correction_dicts"):
-
-        self._correction_dict = {}
-
-        # Load all corrections, compile into a single dict of pattern (key) and replacement (value)
-        for value in load_corrections(folder).values():
-            self._correction_dict.update(value)
-
     def fit(self, X, y=None):
         return self
 
     def transform(self, X, y=None):
         print("Cleaning text")
 
-        # By far the most time consuming part of this is the bulk regex replacement of the manual corrections
         return pd.Series(X).str.upper().\
-                                replace(self._correction_dict, regex=True).\
                                 apply(strip_accents_ascii).\
                                 replace(r"[^A-Z0-9 ]", " ", regex=True).\
                                 replace(r"\s+", " ", regex=True).\
@@ -157,13 +147,7 @@ class Stemmer(BaseEstimator, TransformerMixin):
 
 class StopWords(BaseEstimator, TransformerMixin):
     def __init__(self):
-
         self.__stop_words = stopwords.words('english')
-
-        with open(os.path.join('lookup_files', 'stopwords.txt')) as f:
-            extra_stop_words = f.read().splitlines()
-        # Read from text file ad config
-        self.__stop_words.extend(extra_stop_words)
 
     def fit(self, X=None, y=None):
         return self
