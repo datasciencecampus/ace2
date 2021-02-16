@@ -136,14 +136,13 @@ class MLTrainTest():
             r_tups = list(reversed(sorted_tups))
             r_accum = list(reversed(accumulator))
 
-
             for i in range(len(r_accum)):
                 if r_accum[i] >= accuracy:
                     threshold = max(threshold, r_tups[i][0])
                     break
             thresholds[cls] = threshold
-        for idx, cls in enumerate(all_classes):
-            print(str(cls) + ': ' + str(thresholds[cls]))
+        # for idx, cls in enumerate(all_classes):
+        #     print(str(cls) + ': ' + str(thresholds[cls]))
         return thresholds
         
 
