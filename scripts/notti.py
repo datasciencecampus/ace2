@@ -33,15 +33,15 @@ data_path = path.join('data', 'processed')
 pt.configure_pipeline(experiment_path,data_path , spell=True, split_words=True, text_headers=['improve'],
                       stop_words=True, lemmatize=False, stemm=True)
 
-# pipe_text = pt.PipelineText(experiment_path, pickle_data_file_name)
-# pipe_text.fit_transform()
+pipe_text = pt.PipelineText(experiment_path, pickle_data_file_name)
+pipe_text.fit_transform()
 
 
 pf.configure_pipeline(experiment_path, feature_set=['frequency_matrix'], num_features=0, idf=True,
                        feature_selection_type='Logistic', min_df=3, min_ngram=1, max_ngram=3)
 
-# pipe_features = pf.PipelineFeatures(experiment_path, pickle_data_file_name)
-# pipe_features.fit_transform()
+pipe_features = pf.PipelineFeatures(experiment_path, pickle_data_file_name)
+pipe_features.fit_transform()
 
 
 pm.configure_pipeline(experiment_path)
