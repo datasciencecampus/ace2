@@ -48,17 +48,19 @@ from spellchecker import SpellChecker
 from sklearn.pipeline import Pipeline
 
 import pandas as pd
+pd.set_option("display.max_columns", None)
 
 from ace.utils.utils import create_load_balance_hist, check_and_create
 
 
 def configure_pipeline(experiment_path, data_path, spell=True, split_words=True, text_headers=['RECDESC', 'EXPDESC'],
-                       stop_words=True, lemmatize=False, stemm=False):
+                       stop_words=True, lemmatize=False, stemm=False, lower=True):
     base_path = path.join(experiment_path, 'text')
     config_path = path.join(base_path, 'config.json')
     pipe_path = path.join(base_path, 'pipe')
     lang_path = path.join(base_path, 'lang')
     d={
+        'lower': lower,
         'spell': spell,
         'split_words': split_words,
         'lemmatize': lemmatize,
@@ -100,6 +102,14 @@ class LemmaTokenizer(BaseEstimator, TransformerMixin):
     def transform(self, X=None, y=None):
         print("Lemmatizing and tokenizing (wordnet)")
         return [[self.lemmatize_with_pos(t) for t in pos_tag(word_tokenize(doc))] for doc in X]
+
+class Lower(BaseEstimator, TransformerMixin):
+    def fit(self, X=None, y=None):
+        return self
+
+    def transform(self, X=None, y=None):
+        print("Lower casing")
+        return [' '.join([t.lower() for t in word_tokenize(doc)]) for doc in X]
 
 class Lemmatizer(BaseEstimator, TransformerMixin):
     def __init__(self):
@@ -186,7 +196,7 @@ class SplitWords(BaseEstimator, TransformerMixin):
         return " ".join(corrected_text)
     
     def fit(self, X, y=None):
-        dtime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        dtime = datetime.now().strftime('%Y%m%d%H%M')
 
         df = pd.DataFrame({'words' :[self.__keep_correctly_spelled(token, self.spell_) for token in X]})
         word_count = dict(Counter(" ".join(df['words']).split(" "))) 
@@ -194,7 +204,7 @@ class SplitWords(BaseEstimator, TransformerMixin):
         word_count_df.columns= ['words', 'n_appearances']
 
         # Only keep actual words
-        word_count_df['wordlength'] = word_count_df['words'].str.len()
+        word_count_df['wordlength'] = word_count_df['words'].str.len() #[len(x) for x in word_count_df['words'].values]
         word_count_df = word_count_df[(word_count_df['wordlength'] >=3) |
                                       (word_count_df['words'].isin(self.stopwords_list_))]
 
@@ -268,6 +278,8 @@ class PipelineText:
 
         pipeline_steps=[]
 
+        if self.__config['lower']:
+            pipeline_steps.append(('lower', Lower()))
         if self.__config['spell']:
             pipeline_steps.append(('spell', SpellCheckDoc()))
         if self.__config['split_words']:

@@ -7,6 +7,10 @@ import joblib
 import nltk
 import pandas as pd
 import scipy
+import torch
+from transformers import AutoTokenizer, AutoModel
+from sentence_transformers import SentenceTransformer
+
 import ace.utils.utils as ut
 from nltk import word_tokenize
 from sklearn.decomposition import NMF
@@ -19,8 +23,9 @@ from sklearn.pipeline import Pipeline
 import numpy as np
 
 
-def configure_pipeline(experiment_path,  feature_set=['frequency_matrix'], num_features=0, idf=True,
-                       feature_selection_type='Logistic', min_df=3, min_ngram=1, max_ngram=3):
+def configure_pipeline(experiment_path,  feature_set=['frequency_matrix'], num_features=0, idf=False,
+                       feature_selection_type='Logistic', min_df=3, min_ngram=1, max_ngram=3,
+                       bert_name='sentence-transformers/stsb-bert-large'):
     base_path = path.join(experiment_path, 'features')
     config_path = path.join(base_path, 'config.json')
     pipe_path = path.join(base_path, 'pipe')
@@ -30,6 +35,7 @@ def configure_pipeline(experiment_path,  feature_set=['frequency_matrix'], num_f
         'num_features': num_features,
         'max_df': 0.3,
         'idf': idf,
+        'bert_model_name': bert_name,
         'feature_selection_type': feature_selection_type,
         'min_df': min_df,
         'min_ngram': min_ngram,
@@ -39,18 +45,30 @@ def configure_pipeline(experiment_path,  feature_set=['frequency_matrix'], num_f
         'base_path': base_path,
         'feature_pipeline_pickle_name':'feature_pipeline.pickle',
         'frequency_matrix': True if 'frequency_matrix' in feature_set else False,
-        'embeddings': True if 'embeddings' in feature_set else False,
+        'sbert': True if 'sbert' in feature_set else False,
         'word_count': True if 'word_count' in feature_set else False,
         'pos': True if 'pos' in feature_set else False,
         'nmf': True if 'nmf' in feature_set else False,
         'tf_idf_filename': None
-
     }
 
     ut.check_and_create(base_path)
     with open(config_path, 'w') as fp:
         json.dump(d, fp)
     print()
+
+class ACETransformers:
+    def __init__(self, model_name):
+        print('transforming text to sbert vectors...')
+        # Load AutoModel from huggingface model repository
+        self.__model = SentenceTransformer(model_name)
+
+    def fit(self, X, y=None):
+        return None
+
+    def transform(self, X, y=None):
+        print('transforming text to sbert vectors...')
+        return self.__model.encode(X)
 
 
 
@@ -101,16 +119,17 @@ class PipelineFeatures:
         num_tf_features = self.__config['num_features']
         fs_model = FeatureSelectionFactory(k=num_tf_features).get_model(self.__config['feature_selection_type'])
 
-        count_vectorizer_tuple = ("TF", self.__get_count_vectorizer())
+        count_vectorizer_tuple = ("TF", self.__get_count_vectorizer() if self.__config['frequency_matrix'] else None)
         feature_selection_model_tuple = ("FS", fs_model if num_tf_features else None)
         nmf_tuple = ('NMF',
                      NMF(n_components=50, random_state=42, alpha=.1, l1_ratio=.5, init='nndsvd') if self.__config[
                          'nmf'] else None)
-        idf_tuple = ('IDF', TfidfTransformer() if self.__config['idf'] else None)
+        idf_tuple = ('IDF', TfidfTransformer() if self.__config['idf'] and self.__config['frequency_matrix'] else None)
         wc_tuple = ('WORD_COUNT', None) # self.__add_wordcount_features(X_i) if self.__config['word_count'] else None)
         pos_tuple = ('POS', None) # self.__add_partsofspeech_features(X_i) if self.__config['pos'] else None)
+        sbert_tuple = ('sBERT', ACETransformers(self.__config['bert_model_name']) if self.__config['sbert'] else None )
 
-        pipeline_routines = [count_vectorizer_tuple, idf_tuple, feature_selection_model_tuple, nmf_tuple, wc_tuple,
+        pipeline_routines = [count_vectorizer_tuple, idf_tuple, feature_selection_model_tuple,sbert_tuple, nmf_tuple, wc_tuple,
                              pos_tuple]
         self.__pipeline_steps.extend([x for x in pipeline_routines if x[1] is not None])
 
@@ -152,8 +171,8 @@ class PipelineFeatures:
         X_0 = X_list[0]
         for X_i in X_list[1:]:
             X_0 = scipy.sparse.hstack([X_0, X_i])
+        self.__n_features = X_0.shape[1]
         self.cache_features(X_0,y, self.__data_name)
-        self.__n_features=X_0.shape[0]
         return X_0
 
     def cache_features(self, X, y,suffix):
@@ -211,6 +230,9 @@ class PipelineFeatures:
             self.__X = self.__add_feature_to_sparcemat(self.__X, x)
             self.__X = self.__X.tocsr()
 
+
+
+
     def __count_parts_of_speech(self, docs):
         # https://medium.freecodecamp.org/an-introduction-to-part-of-speech-tagging-and-the-hidden-markov-model-953d45338f24
         tag_types = ['NN', 'VB', 'JJ', 'RB']
@@ -243,11 +265,11 @@ class PipelineFeatures:
         output_text = (
                 "******* Cached Features Report ************" + "\n" +
                 "num final features: " + str(self.__n_features) + "\n"
-                "tf: " + str(self.__n_features) + "\n"
-                "nmf: " + str(self.__n_features) + "\n"
-                "wordcount: " + str(self.__n_features) + "\n"
-                "pos: " + str(self.__n_features) + "\n"
-                "embeddings: " + str(self.__n_features) + "\n")
+                "tf: " + str(self.__config['idf']) + "\n"
+                "nmf: " + str(self.__config['nmf']) + "\n"
+                "word_count: " + str(self.__config['word_count']) + "\n"
+                "pos: " + str(self.__config['pos']) + "\n"
+                "bert: " + str(self.__config['sbert']) + "\n")
 
         filename_out = path.join(self.__config['base_path'], 'report' + suffix + '.txt')
         print(output_text)

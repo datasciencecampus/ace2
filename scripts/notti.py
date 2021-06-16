@@ -11,6 +11,7 @@ import ace.pipelines.pipeline_compare as pc
 from ace.factories.ml_factory import MLFactory
 import pandas as pd
 
+
 data_path = path.join('data',  'notti_nhs.csv')
 nhsn_data = pd.read_csv(data_path)
 
@@ -28,16 +29,15 @@ with bz2.BZ2File(pickle_file, 'wb') as pickle_file:
 experiment_path = 'exp_2'
 classifier_name = 'LogisticRegression'
 classifier_names=['LogisticRegression', 'RandomForestClassifier']
-data_path = path.join('data', 'processed')
+exp_data_path = path.join('data', 'processed')
 
-pt.configure_pipeline(experiment_path,data_path , spell=True, split_words=True, text_headers=['improve'],
-                      stop_words=True, lemmatize=False, stemm=True)
+pt.configure_pipeline(experiment_path,exp_data_path , spell=False, split_words=False, text_headers=['improve'],
+                      stop_words=False, lemmatize=False, stemm=False)
 
 pipe_text = pt.PipelineText(experiment_path, pickle_data_file_name)
 pipe_text.fit_transform()
 
-
-pf.configure_pipeline(experiment_path, feature_set=['frequency_matrix'], num_features=0, idf=True,
+pf.configure_pipeline(experiment_path, feature_set=['sbert'], num_features=0, idf=True,
                        feature_selection_type='Logistic', min_df=3, min_ngram=1, max_ngram=3)
 
 pipe_features = pf.PipelineFeatures(experiment_path, pickle_data_file_name)
@@ -46,11 +46,10 @@ pipe_features.fit_transform()
 
 pm.configure_pipeline(experiment_path)
 
-for classifier_name in classifier_names:
 # ---- MODEL 1 --- #
-    cls = MLFactory.factory(classifier_name)
-    pipe_ml = pm.MLTrainTest(experiment_path, pickle_data_file_name, classifier=cls)
-    pipe_ml.fit_transform()
+cls = MLFactory.factory(classifier_name)
+pipe_ml = pm.MLTrainTest(experiment_path, pickle_data_file_name, classifier=cls)
+pipe_ml.fit_transform()
 
 # dl.configure_pipeline(experiment_path, classifier_name, validation_path=experiment_path + "/features")
 # ml_dep = dl.MLDeploy(experiment_path)

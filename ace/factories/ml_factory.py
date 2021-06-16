@@ -69,7 +69,7 @@ class MLFactory(object):
         elif type == "QuadraticDiscriminantAnalysis_s":
             return QuadraticDiscriminantAnalysis()
         elif type == "RandomForestClassifier":
-            return RandomForestClassifier(n_estimators=80, min_samples_leaf=1, verbose=2)
+            return RandomForestClassifier(n_estimators=80, min_samples_leaf=1, verbose=2, n_jobs=8)
         elif type == "RandomForestClassifier_104":
             return RandomForestClassifier(n_estimators=104, min_samples_leaf=1, verbose=2)
         elif type == "RandomForestClassifier_128":
